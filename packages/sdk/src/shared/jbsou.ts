@@ -17,6 +17,22 @@ export interface JbsouSearchItem {
 
 const JBSOU_BASE_URL = 'https://www.jbsou.cn/'
 
+export function extractAlbumFromLyric(lyric: string): string {
+  if (!lyric || lyric === 'NULL') {
+    return ''
+  }
+  for (const line of lyric.split('\n').slice(0, 10)) {
+    const match = line.match(/^\[al[:：]([^\]]+)\]$/i)
+    if (match?.[1]?.trim()) {
+      return match[1].trim()
+    }
+    if (/^\[\d{2}:\d{2}(?:\.\d{2,3})?\]/.test(line)) {
+      break
+    }
+  }
+  return ''
+}
+
 export async function searchJbsouSite(
   site: string,
   keyword: string,
@@ -112,15 +128,16 @@ export async function buildTrackFromJbsouItem(options: {
     }
   }
 
-  const durationS = extractDurationSeconds(lyric)
+  const durationS = probe.durationS ?? extractDurationSeconds(lyric)
   const coverPath = String(item.cover ?? '')
+  const album = String(item.album ?? '').trim() || extractAlbumFromLyric(lyric)
   return {
     source: sourceName,
     rootSource,
     identifier: songId,
     songName: sanitizeText(String(item.name ?? '')),
     singers: sanitizeText(String(item.artist ?? '').replaceAll('/', ', ')),
-    album: sanitizeText(String(item.album ?? '')),
+    album: sanitizeText(album),
     ext: probe.ext,
     fileSize: probe.fileSize,
     durationS: durationS > 0 ? durationS : undefined,

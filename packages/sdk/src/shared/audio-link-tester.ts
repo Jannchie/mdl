@@ -4,6 +4,7 @@ export interface AudioLinkProbe {
   fileSize: string
   ctype: string
   ext: string
+  durationS?: number
   downloadUrl: string
   finalUrl: string
 }
@@ -104,6 +105,7 @@ export class AudioLinkTester {
           fileSize,
           ctype,
           ext,
+          durationS: this.parseDurationHeader(headResponse.headers),
           downloadUrl: url,
           finalUrl: headResponse.url,
         }
@@ -122,6 +124,7 @@ export class AudioLinkTester {
         fileSize,
         ctype,
         ext,
+        durationS: this.parseDurationHeader(response.headers),
         downloadUrl: url,
         finalUrl: response.url,
       }
@@ -289,6 +292,20 @@ export class AudioLinkTester {
 
   private parseNullableInt(value: string | null): number | null {
     return value && /^\d+$/.test(value) ? Number(value) : null
+  }
+
+  private parseDurationHeader(headers: Headers): number | undefined {
+    for (const key of ['content-duration', 'x-content-duration']) {
+      const value = headers.get(key)
+      if (!value) {
+        continue
+      }
+      const durationS = Number(value)
+      if (Number.isFinite(durationS) && durationS > 0) {
+        return durationS
+      }
+    }
+    return undefined
   }
 
   private formatMb(size: number): string {

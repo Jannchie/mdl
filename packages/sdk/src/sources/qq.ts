@@ -1,5 +1,7 @@
 import type { SearchOptions, SourceContext, Track } from '@jannchie/mdl-core'
 
+import { extractAlbumFromLyric } from '../shared/jbsou.js'
+import { getQQSongDetail } from '../shared/qq.js'
 import { cleanLyric, sanitizeText, secondsToHms } from '../shared/utils.js'
 import { BaseMusicSource } from './base.js'
 
@@ -148,14 +150,16 @@ export class QQMusicSource extends BaseMusicSource {
 
     const coverPath = String(item.cover ?? '')
     const coverUrl = coverPath ? new URL(coverPath, 'https://www.jbsou.cn/').toString() : undefined
-    const durationS = this.extractDurationSeconds(lyric)
+    const detail = await getQQSongDetail(songId)
+    const durationS = Number(detail?.interval ?? 0) || probe.durationS || this.extractDurationSeconds(lyric)
+    const album = String(item.album ?? '').trim() || String(detail?.album?.name ?? '').trim() || extractAlbumFromLyric(lyric)
 
     return {
       source: this.name,
       identifier: songId,
       songName: sanitizeText(String(item.name ?? '')),
       singers: sanitizeText(String(item.artist ?? '').replaceAll('/', ', ')),
-      album: sanitizeText(String(item.album ?? '')),
+      album: sanitizeText(album),
       ext: probe.ext,
       fileSize: probe.fileSize,
       durationS: durationS > 0 ? durationS : undefined,
@@ -166,6 +170,7 @@ export class QQMusicSource extends BaseMusicSource {
       protocol: 'http',
       rawData: {
         search: item,
+        detail,
       },
     }
   }

@@ -6,6 +6,8 @@
   "packageManager": "pnpm@10.28.0",
   "scripts": {
     "build": "tsc -b",
+    "dev": "sh -c 'pnpm -s build && while [ \"$1\" = \"--\" ]; do shift; done && node packages/cli/dist/index.js \"$@\"' --",
+    "mdl": "sh -c 'pnpm -s build && while [ \"$1\" = \"--\" ]; do shift; done && node packages/cli/dist/index.js \"$@\"' --",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -b --pretty false",
