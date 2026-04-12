@@ -12,10 +12,10 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
-    "publish:cli": "npm publish --access public --workspace=cli",
-    "publish:core": "npm publish --access public --workspace=core",
-    "publish:sdk": "npm publish --access public --workspace=sdk",
-    "publish": "pnpm run publish:cli && pnpm run publish:core && pnpm run publish:sdk"
+    "publish:cli": "pnpm --filter @jannchie/mdl-cli publish --access public",
+    "publish:core": "pnpm --filter @jannchie/mdl-core publish --access public",
+    "publish:sdk": "pnpm --filter @jannchie/mdl-sdk publish --access public",
+    "publish": "pnpm run publish:core && pnpm run publish:sdk && pnpm run publish:cli"
   },
   "devDependencies": {
     "@jannchie/eslint-config": "^3.7.8",
