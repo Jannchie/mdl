@@ -1,0 +1,23 @@
+{
+  "name": "@mdl/api",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "mdl-api": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --pretty false"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.6",
+    "@hono/zod-openapi": "^1.1.5",
+    "@jannchie/mdl-sdk": "workspace:*",
+    "@scalar/hono-api-reference": "^0.9.4",
+    "hono": "^4.10.1",
+    "zod": "^4.1.12"
+  }
+}

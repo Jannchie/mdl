@@ -1,0 +1,26 @@
+{
+  "name": "@jannchie/mdl-sdk",
+  "type": "module",
+  "version": "0.1.0",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --pretty false"
+  },
+  "dependencies": {
+    "@jannchie/mdl-core": "workspace:*",
+    "migu-music-api": "^1.0.1",
+    "netease-cloud-music-api": "^0.1.8",
+    "qq-music-api": "^1.1.2"
+  }
+}

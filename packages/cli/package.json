@@ -1,0 +1,21 @@
+{
+  "name": "@jannchie/mdl-cli",
+  "type": "module",
+  "version": "0.1.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "mdl": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --pretty false"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@jannchie/mdl-sdk": "workspace:*",
+    "cac": "^6.7.14"
+  }
+}
