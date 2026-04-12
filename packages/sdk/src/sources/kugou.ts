@@ -48,9 +48,9 @@ export class KugouMusicSource extends BaseMusicSource {
     }, {
       signal: context.requestOverrides?.signal as AbortSignal | undefined,
     })
-    const limit = input.searchSizePerSource ?? 5
+    const limit = input.searchSizePerSource
     const results: Track[] = []
-    for (const item of items.slice(0, limit)) {
+    for (const item of limit === undefined ? items : items.slice(0, limit)) {
       if (signal?.aborted) {
         return results
       }

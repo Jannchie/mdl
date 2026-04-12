@@ -1,3 +1,5 @@
+import type { SearchOptions } from '@jannchie/mdl-core'
+
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -95,4 +97,15 @@ export function hostMatches(urlString: string, suffixes: string[]): boolean {
   catch {
     return false
   }
+}
+
+export function resolveSearchPageSize(input: Pick<SearchOptions, 'searchSizePerPage'>, fallback = 10): number {
+  return input.searchSizePerPage ?? fallback
+}
+
+export function resolveRequestedSearchCount(
+  input: Pick<SearchOptions, 'searchSizePerPage' | 'searchSizePerSource'>,
+  fallbackPageSize = 10,
+): number {
+  return input.searchSizePerSource ?? input.searchSizePerPage ?? fallbackPageSize
 }

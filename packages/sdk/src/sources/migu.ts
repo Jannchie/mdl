@@ -1,6 +1,6 @@
 import type { ParsePlaylistOptions, SearchOptions, SourceContext, Track } from '@jannchie/mdl-core'
 
-import { bytesToMb, cleanLyric, hostMatches, safeGet, sanitizeText, secondsToHms, uniqueByIdentifier } from '../shared/utils.js'
+import { bytesToMb, cleanLyric, hostMatches, resolveRequestedSearchCount, resolveSearchPageSize, safeGet, sanitizeText, secondsToHms, uniqueByIdentifier } from '../shared/utils.js'
 import { BaseMusicSource } from './base.js'
 
 const MIGU_HOSTS = ['music.migu.cn', 'y.migu.cn']
@@ -37,8 +37,8 @@ export class MiguMusicSource extends BaseMusicSource {
   ])
 
   protected buildSearchRequests(input: SearchOptions, context: SourceContext) {
-    const pageSize = input.searchSizePerPage ?? 10
-    const total = input.searchSizePerSource ?? 5
+    const pageSize = resolveSearchPageSize(input)
+    const total = resolveRequestedSearchCount(input, pageSize)
     const searchRule = context.searchRule ?? {}
     const requests = []
     for (let count = 0; count < total; count += pageSize) {
@@ -70,14 +70,14 @@ export class MiguMusicSource extends BaseMusicSource {
   }
 
   override async search(input: SearchOptions, context: SourceContext): Promise<Track[]> {
-    const limit = input.searchSizePerSource ?? 5
+    const requestCount = resolveRequestedSearchCount(input)
     const results: Track[] = []
-    for (let index = 1; index <= limit; index += 1) {
+    for (let index = 1; index <= requestCount; index += 1) {
       const payload = await this.searchClient.json<unknown>('https://api.xcvts.cn/api/music/migu', {
         query: {
           gm: input.keyword,
           n: index,
-          num: Math.max(limit, input.searchSizePerPage ?? limit),
+          num: Math.max(requestCount, resolveSearchPageSize(input, requestCount)),
           type: 'json',
         },
         headers: context.requestOverrides?.headers as Record<string, string> | undefined,

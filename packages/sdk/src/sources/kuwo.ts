@@ -1,6 +1,6 @@
 import type { ParsePlaylistOptions, SearchOptions, SourceContext, Track } from '@jannchie/mdl-core'
 
-import { bytesToMb, cleanLyric, hostMatches, safeGet, sanitizeText, secondsToHms, uniqueByIdentifier } from '../shared/utils.js'
+import { bytesToMb, cleanLyric, hostMatches, resolveRequestedSearchCount, resolveSearchPageSize, safeGet, sanitizeText, secondsToHms, uniqueByIdentifier } from '../shared/utils.js'
 import { BaseMusicSource } from './base.js'
 
 const KUWO_HOSTS = ['kuwo.cn']
@@ -17,8 +17,8 @@ export class KuwoMusicSource extends BaseMusicSource {
   private static readonly qualityLevels = ['lossless', 'exhigh', 'standard']
 
   protected buildSearchRequests(input: SearchOptions) {
-    const pageSize = input.searchSizePerPage ?? 10
-    const total = input.searchSizePerSource ?? 5
+    const pageSize = resolveSearchPageSize(input)
+    const total = resolveRequestedSearchCount(input, pageSize)
     const requests = []
     for (let count = 0; count < total; count += pageSize) {
       requests.push({

@@ -219,6 +219,22 @@ describe('musicservice', () => {
     expect(result[0]?.source).toBe('Fast')
   })
 
+  it('prioritizes query similarity when ordering merged results', async () => {
+    const service = new MusicService([
+      createSearchSource('A', [
+        { source: 'A', identifier: 'a1', songName: '周杰伦', singers: '周杰伦' },
+      ]),
+      createSearchSource('B', [
+        { source: 'B', identifier: 'b1', songName: '稻香', singers: '周杰伦' },
+      ]),
+    ])
+
+    const result = await service.searchMerged({ keyword: '周杰伦 稻香' })
+
+    expect(result[0]?.songName).toBe('稻香')
+    expect(result[1]?.songName).toBe('周杰伦')
+  })
+
   it('opens a track stream by source', async () => {
     const service = new MusicService([createSource('A')])
     const result = await service.openTrackStream({

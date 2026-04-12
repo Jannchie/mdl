@@ -1,6 +1,6 @@
 import type { SearchOptions, SourceContext, Track } from '@jannchie/mdl-core'
 
-import { bytesToMb, cleanLyric, safeGet, sanitizeText, secondsToHms } from '../shared/utils.js'
+import { bytesToMb, cleanLyric, resolveRequestedSearchCount, resolveSearchPageSize, safeGet, sanitizeText, secondsToHms } from '../shared/utils.js'
 import { BaseMusicSource } from './base.js'
 
 export class NeteaseMusicSource extends BaseMusicSource {
@@ -35,8 +35,9 @@ export class NeteaseMusicSource extends BaseMusicSource {
   }
 
   override async search(input: SearchOptions, context: SourceContext): Promise<Track[]> {
-    const pageSize = input.searchSizePerPage ?? 10
-    const total = input.searchSizePerSource ?? 5
+    const pageSize = resolveSearchPageSize(input)
+    const total = resolveRequestedSearchCount(input, pageSize)
+    const limit = input.searchSizePerSource
     const results: Track[] = []
     const signal = context.requestOverrides?.signal as AbortSignal | undefined
 
@@ -72,7 +73,7 @@ export class NeteaseMusicSource extends BaseMusicSource {
           continue
         }
         results.push(track)
-        if (results.length >= total) {
+        if (limit !== undefined && results.length >= limit) {
           return results
         }
       }

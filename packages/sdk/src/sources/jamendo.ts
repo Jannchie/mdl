@@ -2,7 +2,7 @@ import type { ParsePlaylistOptions, SearchOptions, SourceContext, Track } from '
 
 import { createHash } from 'node:crypto'
 
-import { cleanLyric, hostMatches, safeGet, sanitizeText, secondsToHms, uniqueByIdentifier } from '../shared/utils.js'
+import { cleanLyric, hostMatches, resolveRequestedSearchCount, resolveSearchPageSize, safeGet, sanitizeText, secondsToHms, uniqueByIdentifier } from '../shared/utils.js'
 import { BaseMusicSource } from './base.js'
 
 const JAMENDO_HOSTS = ['jamendo.com', 'www.jamendo.com']
@@ -22,8 +22,8 @@ export class JamendoMusicSource extends BaseMusicSource {
   }
 
   protected buildSearchRequests(input: SearchOptions, context: SourceContext) {
-    const pageSize = input.searchSizePerPage ?? 10
-    const total = input.searchSizePerSource ?? 5
+    const pageSize = resolveSearchPageSize(input)
+    const total = resolveRequestedSearchCount(input, pageSize)
     const searchRule = context.searchRule ?? {}
     const requests = []
     for (let count = 0; count < total; count += pageSize) {
@@ -47,7 +47,7 @@ export class JamendoMusicSource extends BaseMusicSource {
   }
 
   override async search(input: SearchOptions, context: SourceContext): Promise<Track[]> {
-    const limit = input.searchSizePerSource ?? 5
+    const limit = input.searchSizePerSource
     const results: Track[] = []
     for (const request of this.buildSearchRequests(input, context)) {
       const payload = await this.searchClient.json<unknown>(request.url, {
@@ -63,7 +63,7 @@ export class JamendoMusicSource extends BaseMusicSource {
           continue
         }
         results.push(track)
-        if (results.length >= limit) {
+        if (limit !== undefined && results.length >= limit) {
           return uniqueByIdentifier(results)
         }
       }

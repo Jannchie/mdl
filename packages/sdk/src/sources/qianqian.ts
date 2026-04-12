@@ -2,7 +2,7 @@ import type { ParsePlaylistOptions, SearchOptions, SourceContext, Track } from '
 
 import { createHash } from 'node:crypto'
 
-import { bytesToMb, cleanLyric, hostMatches, safeGet, sanitizeText, secondsToHms, uniqueByIdentifier } from '../shared/utils.js'
+import { bytesToMb, cleanLyric, hostMatches, resolveRequestedSearchCount, resolveSearchPageSize, safeGet, sanitizeText, secondsToHms, uniqueByIdentifier } from '../shared/utils.js'
 import { BaseMusicSource } from './base.js'
 
 const QIANQIAN_HOSTS = ['music.91q.com', 'music.taihe.com']
@@ -27,8 +27,8 @@ export class QianqianMusicSource extends BaseMusicSource {
   private static readonly secret = '0b50b02fd0d73a9c4c8c3a781c30845f'
 
   protected buildSearchRequests(input: SearchOptions, context: SourceContext) {
-    const pageSize = input.searchSizePerPage ?? 10
-    const total = input.searchSizePerSource ?? 5
+    const pageSize = resolveSearchPageSize(input)
+    const total = resolveRequestedSearchCount(input, pageSize)
     const searchRule = context.searchRule ?? {}
     const requests = []
     for (let count = 0; count < total; count += pageSize) {

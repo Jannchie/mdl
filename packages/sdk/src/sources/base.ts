@@ -48,7 +48,7 @@ export abstract class BaseMusicSource {
   }
 
   async search(input: SearchOptions, context: SourceContext): Promise<Track[]> {
-    const limit = input.searchSizePerSource ?? 5
+    const limit = input.searchSizePerSource
     const results: Track[] = []
     const signal = context.requestOverrides?.signal as AbortSignal | undefined
     for (const request of this.buildSearchRequests(input, context)) {
@@ -71,7 +71,7 @@ export abstract class BaseMusicSource {
           continue
         }
         results.push(track)
-        if (results.length >= limit) {
+        if (limit !== undefined && results.length >= limit) {
           return uniqueByIdentifier(results)
         }
       }

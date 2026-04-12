@@ -39,7 +39,7 @@ export class MusicService {
 
   async searchMerged(options: SearchFusionOptions): Promise<Track[]> {
     const grouped = await this.searchWithOptionalTimeout(options)
-    return this.fuseWithRrf(grouped, options.rrfK ?? 60)
+    return this.fuseWithRrf(grouped, options.rrfK ?? 60, options.keyword)
   }
 
   async download(options: DownloadOptions): Promise<DownloadResult[]> {
@@ -158,7 +158,7 @@ export class MusicService {
     return Object.fromEntries(results)
   }
 
-  private fuseWithRrf(grouped: Record<string, Track[]>, rrfK: number): Track[] {
+  private fuseWithRrf(grouped: Record<string, Track[]>, rrfK: number, keyword: string): Track[] {
     const fused = new Map<string, { score: number, bestRank: number, representative: Track, alternatives: Track[], sources: Set<string> }>()
 
     for (const [source, tracks] of Object.entries(grouped)) {
@@ -187,8 +187,17 @@ export class MusicService {
       }
     }
 
+    const normalizedKeyword = this.normalizeFusionText(keyword)
     return [...fused.values()]
-      .sort((left, right) => right.score - left.score || left.bestRank - right.bestRank)
+      .sort((left, right) => {
+        const keywordScoreDiff
+          = this.computeKeywordMatchScore(right.representative, normalizedKeyword)
+            - this.computeKeywordMatchScore(left.representative, normalizedKeyword)
+        if (keywordScoreDiff !== 0) {
+          return keywordScoreDiff
+        }
+        return right.score - left.score || left.bestRank - right.bestRank
+      })
       .map(item => ({
         ...item.representative,
         fusedScore: Number(item.score.toFixed(6)),
@@ -218,5 +227,57 @@ export class MusicService {
       return leftSize - rightSize
     }
     return Number(left.durationS ?? 0) - Number(right.durationS ?? 0)
+  }
+
+  private computeKeywordMatchScore(track: Track, normalizedKeyword: string): number {
+    if (!normalizedKeyword) {
+      return 0
+    }
+
+    const songName = this.normalizeFusionText(track.songName)
+    const singers = this.normalizeFusionText(track.singers ?? '')
+    const album = this.normalizeFusionText(track.album ?? '')
+    const combined = `${songName}${singers}${album}`
+    const reversed = `${singers}${songName}${album}`
+
+    let score = 0
+    if (songName === normalizedKeyword) {
+      score = Math.max(score, 400)
+    }
+    if (combined === normalizedKeyword || reversed === normalizedKeyword) {
+      score = Math.max(score, 360)
+    }
+    if (songName.includes(normalizedKeyword)) {
+      score = Math.max(score, 320)
+    }
+    if (combined.includes(normalizedKeyword) || reversed.includes(normalizedKeyword)) {
+      score = Math.max(score, 300)
+    }
+    if (singers.includes(normalizedKeyword)) {
+      score = Math.max(score, 220)
+    }
+    if (album.includes(normalizedKeyword)) {
+      score = Math.max(score, 180)
+    }
+
+    const overlap = this.computeCharacterCoverage(normalizedKeyword, combined)
+    return Math.max(score, overlap)
+  }
+
+  private computeCharacterCoverage(query: string, value: string): number {
+    if (!query || !value) {
+      return 0
+    }
+    const remaining = [...value]
+    let matched = 0
+    for (const char of query) {
+      const index = remaining.indexOf(char)
+      if (index === -1) {
+        continue
+      }
+      matched += 1
+      remaining.splice(index, 1)
+    }
+    return Math.floor((matched / query.length) * 100)
   }
 }

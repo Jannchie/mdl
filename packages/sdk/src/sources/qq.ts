@@ -71,9 +71,9 @@ export class QQMusicSource extends BaseMusicSource {
 
     const payload = (await response.json()) as { data?: JbsouSearchItem[] }
     const items = Array.isArray(payload.data) ? payload.data : []
-    const limit = input.searchSizePerSource ?? 5
+    const limit = input.searchSizePerSource
     const results: Track[] = []
-    for (const item of items.slice(0, limit)) {
+    for (const item of limit === undefined ? items : items.slice(0, limit)) {
       if (signal?.aborted) {
         break
       }
