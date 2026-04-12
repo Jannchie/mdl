@@ -1,6 +1,6 @@
 # mdl
 
-`mdl` is a pure TypeScript music search and download toolkit inspired by `musicdl`, but implemented independently.
+`mdl` is a pure TypeScript music search and download toolkit that reimplements the feature set of `musicdl`, but is implemented independently.
 
 It is organized as a monorepo with a shared core layer, a programmatic SDK, a CLI, and an internal Hono API package.
 
@@ -224,6 +224,7 @@ pnpm --filter @jannchie/mdl-cli publish --access public
 
 ## Notes
 
+- This project is a TypeScript reimplementation of the `musicdl` feature set.
 - Some music sources are more stable than others. Source availability depends on upstream providers, region restrictions, and anti-bot behavior.
 - Default visible sources intentionally hide currently unreliable providers.
 - The project does not depend on the original Python `musicdl` implementation.
