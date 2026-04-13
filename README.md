@@ -19,7 +19,6 @@ Internal package:
 ## Features
 
 - Multi-source search
-- RRF-based merged search
 - Playlist parsing
 - Local file download
 - Stream opening for external services such as S3 ingestion pipelines
@@ -72,13 +71,6 @@ mdl search --sources QQMusicClient,MiguMusicClient "稻香"
 mdl search --json --sources MiguMusicClient "槐花落"
 ```
 
-Search with RRF fusion:
-
-```bash
-mdl search-merged --sources QQMusicClient,KugouMusicClient "稻香"
-mdl search-merged --timeout-ms 1500 --json "周杰伦"
-```
-
 Parse a playlist:
 
 ```bash
@@ -103,17 +95,12 @@ const grouped = await client.search({
   sources: ['QQMusicClient', 'MiguMusicClient'],
 })
 
-const merged = await client.searchMerged({
-  keyword: '稻香',
-  timeoutMs: 1500,
-})
-
 const playlist = await client.parsePlaylist({
   playlistUrl: 'https://music.163.com/#/playlist?id=123456',
 })
 ```
 
-All SDK operations are asynchronous. `createClient()` is synchronous, but the actual work is done through async methods such as `search()`, `searchMerged()`, `parsePlaylist()`, `download()`, and `openTrackStream()`.
+All SDK operations are asynchronous. `createClient()` is synchronous, but the actual work is done through async methods such as `search()`, `parsePlaylist()`, `download()`, and `openTrackStream()`.
 
 ### Open a Track Stream
 
@@ -159,7 +146,6 @@ The internal API package uses Hono and exposes:
 - `GET /health`
 - `GET /sources`
 - `POST /search`
-- `POST /search-merged`
 - `POST /parse-playlist`
 - `POST /download`
 - `GET /openapi.json`
@@ -204,6 +190,15 @@ Useful local commands:
 ```bash
 pnpm --filter @jannchie/mdl-cli exec mdl --help
 pnpm --filter @mdl/api exec mdl-api
+pnpm mdl:dev -- --help
+pnpm api:dev
+```
+
+Run directly from source without building `dist` first:
+
+```bash
+pnpm mdl:dev -- search "Jay Chou" --sources QQMusicClient,MiguMusicClient
+pnpm api:dev
 ```
 
 ## Publishing
@@ -217,9 +212,9 @@ Public packages:
 Typical publish order:
 
 ```bash
-pnpm --filter @jannchie/mdl-core publish --access public
-pnpm --filter @jannchie/mdl-sdk publish --access public
-pnpm --filter @jannchie/mdl-cli publish --access public
+pnpm --filter @jannchie/mdl-core run build && pnpm --filter @jannchie/mdl-core publish --access public
+pnpm --filter @jannchie/mdl-sdk run build && pnpm --filter @jannchie/mdl-sdk publish --access public
+pnpm --filter @jannchie/mdl-cli run build && pnpm --filter @jannchie/mdl-cli publish --access public
 ```
 
 ## Notes

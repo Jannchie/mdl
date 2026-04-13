@@ -1,11 +1,11 @@
 import type {
   DownloadOptions,
   DownloadResult,
+  FetchDetailOptions,
   MusicSource,
   OpenedTrackStream,
   OpenTrackStreamOptions,
   ParsePlaylistOptions,
-  SearchFusionOptions,
   SearchOptions,
   SourceContext,
   Track,
@@ -37,9 +37,17 @@ export class MusicService {
     return Object.fromEntries(entries)
   }
 
-  async searchMerged(options: SearchFusionOptions): Promise<Track[]> {
-    const grouped = await this.searchWithOptionalTimeout(options)
-    return this.fuseWithRrf(grouped, options.rrfK ?? 60, options.keyword)
+  async fetchDetail(options: FetchDetailOptions): Promise<Track> {
+    const source = this.sources.get(options.track.source)
+    if (!source) {
+      throw new Error(`Unknown source: ${options.track.source}`)
+    }
+
+    const context: SourceContext = {
+      initConfig: options.initSourceConfig?.[source.name],
+      requestOverrides: options.requestOverrides?.[source.name],
+    }
+    return await source.fetchDetail(options, context)
   }
 
   async download(options: DownloadOptions): Promise<DownloadResult[]> {
@@ -114,170 +122,5 @@ export class MusicService {
       requestOverrides: options.requestOverrides?.[sourceName],
       searchRule: options.searchRules?.[sourceName],
     }
-  }
-
-  private async searchWithOptionalTimeout(options: SearchFusionOptions): Promise<Record<string, Track[]>> {
-    if (!(options.timeoutMs && options.timeoutMs > 0)) {
-      return this.search(options)
-    }
-
-    const selected = this.resolveSources(options.sources)
-    const results = new Map<string, Track[]>()
-    const timers: NodeJS.Timeout[] = []
-    const tasks = selected.map(async (source) => {
-      const controller = new AbortController()
-      timers.push(setTimeout(() => controller.abort(), options.timeoutMs))
-      const context = this.buildContext(source.name, options)
-      const requestOverrides = {
-        ...context.requestOverrides,
-        timeoutMs: options.timeoutMs,
-        signal: controller.signal,
-      }
-      try {
-        const tracks = await source.search(options, { ...context, requestOverrides })
-        results.set(source.name, tracks)
-      }
-      catch {
-        results.set(source.name, [])
-      }
-      finally {
-        controller.abort()
-      }
-    })
-
-    await Promise.allSettled(tasks)
-    for (const timer of timers) {
-      clearTimeout(timer)
-    }
-
-    for (const source of selected) {
-      if (!results.has(source.name)) {
-        results.set(source.name, [])
-      }
-    }
-    return Object.fromEntries(results)
-  }
-
-  private fuseWithRrf(grouped: Record<string, Track[]>, rrfK: number, keyword: string): Track[] {
-    const fused = new Map<string, { score: number, bestRank: number, representative: Track, alternatives: Track[], sources: Set<string> }>()
-
-    for (const [source, tracks] of Object.entries(grouped)) {
-      for (const [index, track] of tracks.entries()) {
-        const rank = index + 1
-        const key = this.buildFusionKey(track)
-        const existing = fused.get(key)
-        const score = 1 / (rrfK + rank)
-        if (!existing) {
-          fused.set(key, {
-            score,
-            bestRank: rank,
-            representative: track,
-            alternatives: [track],
-            sources: new Set([source]),
-          })
-          continue
-        }
-        existing.score += score
-        existing.alternatives.push(track)
-        existing.sources.add(source)
-        if (rank < existing.bestRank || (rank === existing.bestRank && this.compareTracks(track, existing.representative) > 0)) {
-          existing.bestRank = rank
-          existing.representative = track
-        }
-      }
-    }
-
-    const normalizedKeyword = this.normalizeFusionText(keyword)
-    return [...fused.values()]
-      .sort((left, right) => {
-        const keywordScoreDiff
-          = this.computeKeywordMatchScore(right.representative, normalizedKeyword)
-            - this.computeKeywordMatchScore(left.representative, normalizedKeyword)
-        if (keywordScoreDiff !== 0) {
-          return keywordScoreDiff
-        }
-        return right.score - left.score || left.bestRank - right.bestRank
-      })
-      .map(item => ({
-        ...item.representative,
-        fusedScore: Number(item.score.toFixed(6)),
-        matchedSources: [...item.sources].sort(),
-        alternatives: item.alternatives,
-      }))
-  }
-
-  private buildFusionKey(track: Track): string {
-    const songName = this.normalizeFusionText(track.songName)
-    const singers = this.normalizeFusionText(track.singers ?? '')
-    return `${songName}::${singers}`
-  }
-
-  private normalizeFusionText(value: string): string {
-    return value
-      .toLowerCase()
-      .normalize('NFKC')
-      .replaceAll(/\([^)]*\)|（[^）]*）|\[[^\]]*\]/g, '')
-      .replaceAll(/[^a-z0-9\u4E00-\u9FA5]+/g, '')
-  }
-
-  private compareTracks(left: Track, right: Track): number {
-    const leftSize = Number(left.fileSizeBytes ?? 0)
-    const rightSize = Number(right.fileSizeBytes ?? 0)
-    if (leftSize !== rightSize) {
-      return leftSize - rightSize
-    }
-    return Number(left.durationS ?? 0) - Number(right.durationS ?? 0)
-  }
-
-  private computeKeywordMatchScore(track: Track, normalizedKeyword: string): number {
-    if (!normalizedKeyword) {
-      return 0
-    }
-
-    const songName = this.normalizeFusionText(track.songName)
-    const singers = this.normalizeFusionText(track.singers ?? '')
-    const album = this.normalizeFusionText(track.album ?? '')
-    const combined = `${songName}${singers}${album}`
-    const reversed = `${singers}${songName}${album}`
-
-    let score = 0
-    if (songName === normalizedKeyword) {
-      score = Math.max(score, 400)
-    }
-    if (combined === normalizedKeyword || reversed === normalizedKeyword) {
-      score = Math.max(score, 360)
-    }
-    if (songName.includes(normalizedKeyword)) {
-      score = Math.max(score, 320)
-    }
-    if (combined.includes(normalizedKeyword) || reversed.includes(normalizedKeyword)) {
-      score = Math.max(score, 300)
-    }
-    if (singers.includes(normalizedKeyword)) {
-      score = Math.max(score, 220)
-    }
-    if (album.includes(normalizedKeyword)) {
-      score = Math.max(score, 180)
-    }
-
-    const overlap = this.computeCharacterCoverage(normalizedKeyword, combined)
-    return Math.max(score, overlap)
-  }
-
-  private computeCharacterCoverage(query: string, value: string): number {
-    if (!query || !value) {
-      return 0
-    }
-    const remaining = [...value]
-    let matched = 0
-    for (const char of query) {
-      const index = remaining.indexOf(char)
-      if (index === -1) {
-        continue
-      }
-      matched += 1
-      remaining.splice(index, 1)
-    }
-    return Math.floor((matched / query.length) * 100)
   }
 }

@@ -3,6 +3,16 @@
   "type": "module",
   "version": "0.2.0",
   "private": true,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./dev": {
+      "types": "./src/dev.ts",
+      "default": "./src/dev.ts"
+    }
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
@@ -10,6 +20,7 @@
   },
   "scripts": {
     "build": "tsc -b",
+    "dev": "tsx src/dev.ts",
     "typecheck": "tsc -p tsconfig.json --pretty false"
   },
   "dependencies": {

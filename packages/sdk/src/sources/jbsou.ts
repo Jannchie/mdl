@@ -1,6 +1,8 @@
 import type { SearchOptions, SourceContext, Track } from '@jannchie/mdl-core'
 
-import { buildTrackFromJbsouItem, searchJbsouSite } from '../shared/jbsou.js'
+import type { JbsouSearchItem } from '../shared/jbsou.js'
+
+import { buildSearchTrackFromJbsouItem, resolveTrackFromJbsouItem, searchJbsouSite } from '../shared/jbsou.js'
 import { BaseMusicSource } from './base.js'
 
 const DEFAULT_SITES = ['qq', 'netease', 'kugou', 'kuwo']
@@ -34,7 +36,7 @@ export class JBSouMusicSource extends BaseMusicSource {
     return []
   }
 
-  protected async parseSearchItem(): Promise<Track | null> {
+  protected async buildSearchTrack(_item: unknown, _context: SourceContext): Promise<Track | null> {
     return null
   }
 
@@ -58,15 +60,12 @@ export class JBSouMusicSource extends BaseMusicSource {
         if (signal?.aborted) {
           return results
         }
-        const track = await buildTrackFromJbsouItem({
+        const track = buildSearchTrackFromJbsouItem({
           sourceName: this.name,
           rootSource: site,
           item,
-          context,
-          parseClient: this.parseClient,
-          audioLinkTester: this.audioLinkTester,
         })
-        if (!track?.downloadUrl) {
+        if (!track) {
           continue
         }
         results.push(track)
@@ -77,6 +76,31 @@ export class JBSouMusicSource extends BaseMusicSource {
     }
 
     return results
+  }
+
+  protected async resolveTrackDetail(track: Track, context: SourceContext): Promise<Track> {
+    if (track.downloadUrl) {
+      return track
+    }
+
+    const item = track.rawData?.search as JbsouSearchItem | undefined
+    const rootSource = track.rootSource
+    if (!item || !rootSource) {
+      throw new Error(`Track ${track.identifier} from ${this.name} is missing JBSou search metadata`)
+    }
+
+    const detailed = await resolveTrackFromJbsouItem({
+      sourceName: this.name,
+      rootSource,
+      item,
+      context,
+      parseClient: this.parseClient,
+      audioLinkTester: this.audioLinkTester,
+    })
+    if (!detailed) {
+      throw new Error(`Failed to fetch detail for ${track.identifier} from ${this.name}`)
+    }
+    return detailed
   }
 
   private resolveSites(context: SourceContext): string[] {

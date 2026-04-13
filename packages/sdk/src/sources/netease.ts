@@ -30,7 +30,7 @@ export class NeteaseMusicSource extends BaseMusicSource {
     return []
   }
 
-  protected async parseSearchItem(): Promise<Track | null> {
+  protected async buildSearchTrack(_item: unknown, _context: SourceContext): Promise<Track | null> {
     return null
   }
 
@@ -68,8 +68,8 @@ export class NeteaseMusicSource extends BaseMusicSource {
         break
       }
       for (const item of items) {
-        const track = await this.parseOfficialSearchItem(item, context)
-        if (!track?.downloadUrl) {
+        const track = this.buildTrackFromSearchItem(item)
+        if (!track) {
           continue
         }
         results.push(track)
@@ -82,12 +82,59 @@ export class NeteaseMusicSource extends BaseMusicSource {
     return results
   }
 
-  private async parseOfficialSearchItem(item: unknown, context: SourceContext): Promise<Track | null> {
+  protected async resolveTrackDetail(track: Track, context: SourceContext): Promise<Track> {
+    if (track.downloadUrl) {
+      return track
+    }
+
+    const searchResult = (track.rawData?.search as Record<string, unknown> | undefined) ?? {
+      id: track.identifier,
+      name: track.songName,
+      ar: (track.singers ?? '').split(',').map(name => ({ name: name.trim() })).filter(item => item.name),
+      al: {
+        name: track.album,
+        picUrl: track.coverUrl,
+      },
+    }
+    const detailed = await this.resolveTrackFromSearchItem(searchResult, context)
+    if (!detailed) {
+      throw new Error(`Failed to fetch detail for ${track.identifier} from ${this.name}`)
+    }
+    return detailed
+  }
+
+  private buildTrackFromSearchItem(item: unknown): Track | null {
+    const searchResult = item as Record<string, unknown>
+    const songId = String(searchResult.id ?? '')
+    if (!songId) {
+      return null
+    }
+
+    const artists = (safeGet(searchResult, ['ar'], []) as Array<{ name?: string }>)
+      .map(artist => artist.name)
+      .filter(Boolean)
+      .join(', ')
+    return {
+      source: this.name,
+      identifier: songId,
+      songName: sanitizeText(String(searchResult.name ?? '')),
+      singers: sanitizeText(artists),
+      album: sanitizeText(String(safeGet(searchResult, ['al', 'name'], ''))),
+      coverUrl: String(safeGet(searchResult, ['al', 'picUrl'], '')) || undefined,
+      durationS: Number(searchResult.dt ?? 0) > 1000 ? Number(searchResult.dt ?? 0) / 1000 : Number(searchResult.dt ?? 0) || undefined,
+      duration: Number(searchResult.dt ?? 0) ? secondsToHms(Number(searchResult.dt ?? 0) > 1000 ? Number(searchResult.dt ?? 0) / 1000 : Number(searchResult.dt ?? 0)) : undefined,
+      rawData: {
+        search: searchResult,
+      },
+    }
+  }
+
+  private async resolveTrackFromSearchItem(item: Record<string, unknown>, context: SourceContext): Promise<Track | null> {
     const signal = context.requestOverrides?.signal as AbortSignal | undefined
     if (signal?.aborted) {
       return null
     }
-    const searchResult = item as Record<string, unknown>
+    const searchResult = item
     const songId = String(searchResult.id ?? '')
     if (!songId) {
       return null

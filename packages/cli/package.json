@@ -2,6 +2,16 @@
   "name": "@jannchie/mdl-cli",
   "type": "module",
   "version": "0.2.0",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./dev": {
+      "types": "./src/dev.ts",
+      "default": "./src/dev.ts"
+    }
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
@@ -9,6 +19,7 @@
   },
   "scripts": {
     "build": "tsc -b",
+    "dev": "tsx src/dev.ts",
     "typecheck": "tsc -p tsconfig.json --pretty false"
   },
   "publishConfig": {
@@ -16,6 +27,7 @@
   },
   "dependencies": {
     "@jannchie/mdl-sdk": "workspace:*",
-    "cac": "^6.7.14"
+    "cac": "^6.7.14",
+    "cli-table3": "^0.6.5"
   }
 }

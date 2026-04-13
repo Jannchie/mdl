@@ -6,21 +6,22 @@
   "packageManager": "pnpm@10.28.0",
   "scripts": {
     "build": "tsc -b",
-    "dev": "sh -c 'pnpm -s build && while [ \"$1\" = \"--\" ]; do shift; done && node packages/cli/dist/index.js \"$@\"' --",
-    "mdl": "sh -c 'pnpm -s build && while [ \"$1\" = \"--\" ]; do shift; done && node packages/cli/dist/index.js \"$@\"' --",
+    "mdl": "sh -c 'while [ \"$1\" = \"--\" ]; do shift; done && pnpm exec tsx packages/cli/src/dev.ts \"$@\"' --",
+    "api:dev": "pnpm exec tsx packages/api/src/dev.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
-    "publish:cli": "pnpm --filter @jannchie/mdl-cli publish --access public",
-    "publish:core": "pnpm --filter @jannchie/mdl-core publish --access public",
-    "publish:sdk": "pnpm --filter @jannchie/mdl-sdk publish --access public",
+    "publish:cli": "pnpm --filter @jannchie/mdl-cli run build && pnpm --filter @jannchie/mdl-cli publish --access public",
+    "publish:core": "pnpm --filter @jannchie/mdl-core run build && pnpm --filter @jannchie/mdl-core publish --access public",
+    "publish:sdk": "pnpm --filter @jannchie/mdl-sdk run build && pnpm --filter @jannchie/mdl-sdk publish --access public",
     "publish": "pnpm run publish:core && pnpm run publish:sdk && pnpm run publish:cli"
   },
   "devDependencies": {
     "@jannchie/eslint-config": "^3.7.8",
     "@types/node": "^24.6.0",
     "eslint": "^10.2.0",
+    "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
   }

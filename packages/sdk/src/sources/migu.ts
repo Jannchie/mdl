@@ -85,15 +85,76 @@ export class MiguMusicSource extends BaseMusicSource {
         timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
         signal: context.requestOverrides?.signal as AbortSignal | undefined,
       })
-      const track = await this.parseXcvtsItem(payload, context)
-      if (track?.downloadUrl) {
+      const track = this.buildTrackFromXcvtsItem(payload)
+      if (track) {
         results.push(track)
       }
     }
     return uniqueByIdentifier(results)
   }
 
-  protected async parseSearchItem(item: unknown, context: SourceContext): Promise<Track | null> {
+  protected async buildSearchTrack(item: unknown, _context: SourceContext): Promise<Track | null> {
+    const searchResult = item as Record<string, unknown>
+    const contentId = String(searchResult.contentId ?? '')
+    if (!contentId) {
+      return null
+    }
+
+    return {
+      source: this.name,
+      identifier: contentId,
+      songName: sanitizeText(String(searchResult.name ?? searchResult.songName ?? '')),
+      singers: sanitizeText(
+        ((safeGet(searchResult, ['singers'], []) as Array<{ name?: string }>)
+          || (safeGet(searchResult, ['singerList'], []) as Array<{ name?: string }>))
+          .map(artist => artist.name)
+          .filter(Boolean)
+          .join(', '),
+      ),
+      album: sanitizeText(
+        String(
+          searchResult.album
+            ?? (safeGet(searchResult, ['albums'], []) as Array<{ name?: string }>)
+              .map(album => album.name)
+              .filter(Boolean)
+              .join(', '),
+        ),
+      ),
+      coverUrl: this.resolveCoverUrl(searchResult),
+      rawData: {
+        search: searchResult,
+      },
+    }
+  }
+
+  protected async resolveTrackDetail(track: Track, context: SourceContext): Promise<Track> {
+    if (track.downloadUrl) {
+      return track
+    }
+
+    const searchResult = track.rawData?.search as Record<string, unknown> | undefined
+    if (searchResult && ('music_url' in searchResult || 'lrc_url' in searchResult || 'link' in searchResult)) {
+      const detailed = await this.parseXcvtsItem(searchResult, context)
+      if (!detailed) {
+        throw new Error(`Failed to fetch detail for ${track.identifier} from ${this.name}`)
+      }
+      return detailed
+    }
+
+    const detailed = await this.resolveTrackFromSearchItem(searchResult ?? {
+      contentId: track.identifier,
+      name: track.songName,
+      album: track.album,
+      singers: (track.singers ?? '').split(',').map(name => ({ name: name.trim() })).filter(item => item.name),
+      img3: track.coverUrl,
+    }, context)
+    if (!detailed) {
+      throw new Error(`Failed to fetch detail for ${track.identifier} from ${this.name}`)
+    }
+    return detailed
+  }
+
+  private async resolveTrackFromSearchItem(item: unknown, context: SourceContext): Promise<Track | null> {
     const searchResult = item as Record<string, unknown>
     const contentId = String(searchResult.contentId ?? '')
     if (!contentId) {
@@ -138,6 +199,8 @@ export class MiguMusicSource extends BaseMusicSource {
       const downloadUrlStatus = await this.audioLinkTester.test(downloadUrl, {
         headers: context.requestOverrides?.headers as Record<string, string> | undefined,
         cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
+        signal: context.requestOverrides?.signal as AbortSignal | undefined,
       })
       if (!downloadUrlStatus.ok) {
         continue
@@ -145,6 +208,8 @@ export class MiguMusicSource extends BaseMusicSource {
       const probe = await this.audioLinkTester.probe(downloadUrl, {
         headers: context.requestOverrides?.headers as Record<string, string> | undefined,
         cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
+        signal: context.requestOverrides?.signal as AbortSignal | undefined,
       })
       if (!(probe.ext && probe.ext !== 'NULL')) {
         continue
@@ -154,7 +219,12 @@ export class MiguMusicSource extends BaseMusicSource {
       const lyricUrl = String(searchResult.lyricUrl ?? '')
       if (lyricUrl.startsWith('http')) {
         try {
-          lyric = cleanLyric(await this.parseClient.text(lyricUrl))
+          lyric = cleanLyric(await this.parseClient.text(lyricUrl, {
+            headers: context.requestOverrides?.headers as Record<string, string> | undefined,
+            cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
+            timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
+            signal: context.requestOverrides?.signal as AbortSignal | undefined,
+          }))
         }
         catch {
           lyric = 'NULL'
@@ -208,6 +278,8 @@ export class MiguMusicSource extends BaseMusicSource {
     const resolvedUrl = await this.parseClient.resolveUrl(input.playlistUrl, {
       headers: context.requestOverrides?.headers as Record<string, string> | undefined,
       cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
+      timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
+      signal: context.requestOverrides?.signal as AbortSignal | undefined,
     })
     const url = new URL(resolvedUrl)
     const playlistId = url.searchParams.get('playlistId') ?? url.pathname.split('/').pop()?.replace(/\.html?$/, '') ?? ''
@@ -225,6 +297,8 @@ export class MiguMusicSource extends BaseMusicSource {
         },
         headers: context.requestOverrides?.headers as Record<string, string> | undefined,
         cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
+        signal: context.requestOverrides?.signal as AbortSignal | undefined,
       })
       const items = safeGet(payload, ['data', 'songList'], [])
       if (!Array.isArray(items) || items.length === 0) {
@@ -237,7 +311,7 @@ export class MiguMusicSource extends BaseMusicSource {
       }
     }
 
-    const parsed = await Promise.all(tracks.map(item => this.parseSearchItem(item, context)))
+    const parsed = await Promise.all(tracks.map(item => this.buildSearchTrack(item, context)))
     return uniqueByIdentifier(parsed.filter((track): track is Track => track !== null))
   }
 
@@ -329,5 +403,25 @@ export class MiguMusicSource extends BaseMusicSource {
       return ''
     }
     return link.split('/').pop() ?? ''
+  }
+
+  private buildTrackFromXcvtsItem(payload: unknown): Track | null {
+    const data = payload as Record<string, unknown>
+    const identifier = this.extractMiguIdentifier(String(data.link ?? '')) || sanitizeText(String(data.title ?? ''))
+    if (!identifier) {
+      return null
+    }
+
+    return {
+      source: this.name,
+      identifier,
+      songName: sanitizeText(String(data.title ?? '')),
+      singers: sanitizeText(String(data.singer ?? '')),
+      album: 'NULL',
+      coverUrl: String(data.cover ?? '') || undefined,
+      rawData: {
+        search: data,
+      },
+    }
   }
 }

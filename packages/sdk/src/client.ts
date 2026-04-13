@@ -2,7 +2,6 @@ import { MusicService } from '@jannchie/mdl-core'
 
 import {
   JamendoMusicSource,
-  JBSouMusicSource,
   KugouMusicSource,
   KuwoMusicSource,
   MiguMusicSource,
@@ -17,7 +16,6 @@ export function createClient(): MusicService {
     new QQMusicSource(),
     new KuwoMusicSource(),
     new KugouMusicSource(),
-    new JBSouMusicSource(),
     new JamendoMusicSource(),
   ])
 }

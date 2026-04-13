@@ -58,8 +58,8 @@ export class JamendoMusicSource extends BaseMusicSource {
         signal: context.requestOverrides?.signal as AbortSignal | undefined,
       })
       for (const item of this.extractSearchItems(payload)) {
-        const track = await this.parseSearchItem(item, context)
-        if (!track?.downloadUrl) {
+        const track = await this.buildSearchTrack(item, context)
+        if (!track) {
           continue
         }
         results.push(track)
@@ -71,15 +71,46 @@ export class JamendoMusicSource extends BaseMusicSource {
     return uniqueByIdentifier(results)
   }
 
-  protected async parseSearchItem(item: unknown, context: SourceContext): Promise<Track | null> {
-    const signal = context.requestOverrides?.signal as AbortSignal | undefined
-    if (signal?.aborted) {
-      return null
-    }
+  protected async buildSearchTrack(item: unknown, _context: SourceContext): Promise<Track | null> {
     const searchResult = item as Record<string, unknown>
     const songId = String(searchResult.id ?? '')
     if (!songId) {
       return null
+    }
+
+    return {
+      source: this.name,
+      identifier: songId,
+      songName: sanitizeText(String(searchResult.name ?? '')),
+      singers: sanitizeText(String(safeGet(searchResult, ['artist', 'name'], ''))),
+      album: sanitizeText(String(safeGet(searchResult, ['album', 'name'], ''))),
+      durationS: Number(searchResult.duration ?? 0) || undefined,
+      duration: Number(searchResult.duration ?? 0) ? secondsToHms(Number(searchResult.duration ?? 0)) : undefined,
+      rawData: {
+        search: searchResult,
+      },
+    }
+  }
+
+  protected async resolveTrackDetail(track: Track, context: SourceContext): Promise<Track> {
+    if (track.downloadUrl) {
+      return track
+    }
+
+    const searchResult = (track.rawData?.search as Record<string, unknown> | undefined) ?? {
+      id: track.identifier,
+      name: track.songName,
+      duration: track.durationS,
+      artist: { name: track.singers },
+      album: { name: track.album },
+    }
+    const signal = context.requestOverrides?.signal as AbortSignal | undefined
+    if (signal?.aborted) {
+      throw new Error('aborted')
+    }
+    const songId = String(searchResult.id ?? '')
+    if (!songId) {
+      throw new Error(`Track ${track.identifier} from ${this.name} is missing Jamendo search metadata`)
     }
 
     const downloadResult = await this.parseClient.json<unknown>('https://www.jamendo.com/api/tracks', {
@@ -91,7 +122,7 @@ export class JamendoMusicSource extends BaseMusicSource {
     })
     const trackPayload = Array.isArray(downloadResult) ? downloadResult[0] : null
     if (!trackPayload || typeof trackPayload !== 'object') {
-      return null
+      throw new Error(`Failed to load Jamendo metadata for ${track.identifier}`)
     }
 
     const artistName
@@ -123,7 +154,7 @@ export class JamendoMusicSource extends BaseMusicSource {
 
     for (const downloadUrl of tried) {
       if (signal?.aborted) {
-        return null
+        throw new Error('aborted')
       }
       const downloadUrlStatus = await this.audioLinkTester.test(downloadUrl, {
         headers: context.requestOverrides?.headers as Record<string, string> | undefined,
@@ -165,7 +196,7 @@ export class JamendoMusicSource extends BaseMusicSource {
       }
     }
 
-    return null
+    throw new Error(`Failed to fetch detail for ${track.identifier} from ${this.name}`)
   }
 
   override async parsePlaylist(input: ParsePlaylistOptions, context: SourceContext): Promise<Track[]> {
@@ -192,7 +223,7 @@ export class JamendoMusicSource extends BaseMusicSource {
     const tracks = Array.isArray((playlist as Record<string, unknown> | null)?.tracks)
       ? ((playlist as Record<string, unknown>).tracks as unknown[])
       : []
-    const parsed = await Promise.all(tracks.map(track => this.parseSearchItem(track, context)))
+    const parsed = await Promise.all(tracks.map(track => this.buildSearchTrack(track, context)))
     return uniqueByIdentifier(parsed.filter((track): track is Track => track !== null))
   }
 

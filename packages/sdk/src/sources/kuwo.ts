@@ -47,20 +47,47 @@ export class KuwoMusicSource extends BaseMusicSource {
     return safeGet(payload, ['abslist'], [])
   }
 
-  protected async parseSearchItem(item: unknown, context: SourceContext): Promise<Track | null> {
-    const signal = context.requestOverrides?.signal as AbortSignal | undefined
-    if (signal?.aborted) {
-      return null
-    }
+  protected async buildSearchTrack(item: unknown, _context: SourceContext): Promise<Track | null> {
     const searchResult = item as Record<string, unknown>
     const songId = String(searchResult.MUSICRID ?? searchResult.musicrid ?? '').replace(/^MUSIC_/, '')
     if (!songId) {
       return null
     }
 
+    return {
+      source: this.name,
+      identifier: songId,
+      songName: sanitizeText(String(searchResult.SONGNAME ?? searchResult.name ?? '')),
+      singers: sanitizeText(String(searchResult.ARTIST ?? searchResult.artist ?? '')),
+      album: sanitizeText(String(searchResult.ALBUM ?? searchResult.album ?? '')),
+      coverUrl: String(searchResult.hts_MVPIC ?? searchResult.albumpic ?? '') || undefined,
+      rawData: {
+        search: searchResult,
+      },
+    }
+  }
+
+  protected async resolveTrackDetail(track: Track, context: SourceContext): Promise<Track> {
+    if (track.downloadUrl) {
+      return track
+    }
+
+    const signal = context.requestOverrides?.signal as AbortSignal | undefined
+    if (signal?.aborted) {
+      throw new Error('aborted')
+    }
+    const searchResult = (track.rawData?.search as Record<string, unknown> | undefined) ?? {
+      MUSICRID: track.identifier,
+      SONGNAME: track.songName,
+      ARTIST: track.singers,
+      ALBUM: track.album,
+      hts_MVPIC: track.coverUrl,
+    }
+    const songId = String(searchResult.MUSICRID ?? searchResult.musicrid ?? track.identifier).replace(/^MUSIC_/, '')
+
     for (const level of KuwoMusicSource.qualityLevels) {
       if (signal?.aborted) {
-        return null
+        throw new Error('aborted')
       }
       const payload = await this.parseClient.json<unknown>('https://kw-api.cenguigui.cn/', {
         query: {
@@ -123,7 +150,7 @@ export class KuwoMusicSource extends BaseMusicSource {
       }
     }
 
-    return null
+    throw new Error(`Failed to fetch detail for ${track.identifier} from ${this.name}`)
   }
 
   override async parsePlaylist(input: ParsePlaylistOptions, context: SourceContext): Promise<Track[]> {
@@ -173,7 +200,7 @@ export class KuwoMusicSource extends BaseMusicSource {
     }
 
     const deduped = [...new Map(tracks.map(track => [String((track as Record<string, unknown>).musicrid ?? ''), track])).values()]
-    const parsed = await Promise.all(deduped.map(track => this.parseSearchItem(track, context)))
+    const parsed = await Promise.all(deduped.map(track => this.buildSearchTrack(track, context)))
     return uniqueByIdentifier(parsed.filter((track): track is Track => track !== null))
   }
 

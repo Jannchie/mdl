@@ -45,7 +45,7 @@ export class QQMusicSource extends BaseMusicSource {
     return []
   }
 
-  protected async parseSearchItem(): Promise<Track | null> {
+  protected async buildSearchTrack(_item: unknown, _context: SourceContext): Promise<Track | null> {
     return null
   }
 
@@ -77,15 +77,52 @@ export class QQMusicSource extends BaseMusicSource {
       if (signal?.aborted) {
         break
       }
-      const track = await this.parseJbsouSearchItem(item, context)
-      if (track?.downloadUrl) {
+      const track = this.buildTrackFromSearchItem(item)
+      if (track) {
         results.push(track)
       }
     }
     return results
   }
 
-  private async parseJbsouSearchItem(item: JbsouSearchItem, context: SourceContext): Promise<Track | null> {
+  protected async resolveTrackDetail(track: Track, context: SourceContext): Promise<Track> {
+    if (track.downloadUrl) {
+      return track
+    }
+
+    const item = track.rawData?.search as JbsouSearchItem | undefined
+    if (!item) {
+      throw new Error(`Track ${track.identifier} from ${this.name} is missing QQ search metadata`)
+    }
+
+    const detailed = await this.resolveTrackFromSearchItem(item, context)
+    if (!detailed) {
+      throw new Error(`Failed to fetch detail for ${track.identifier} from ${this.name}`)
+    }
+    return detailed
+  }
+
+  private buildTrackFromSearchItem(item: JbsouSearchItem): Track | null {
+    const songId = String(item.songid ?? '')
+    if (!songId) {
+      return null
+    }
+
+    const coverPath = String(item.cover ?? '')
+    return {
+      source: this.name,
+      identifier: songId,
+      songName: sanitizeText(String(item.name ?? '')),
+      singers: sanitizeText(String(item.artist ?? '').replaceAll('/', ', ')),
+      album: sanitizeText(String(item.album ?? '')),
+      coverUrl: coverPath ? new URL(coverPath, 'https://www.jbsou.cn/').toString() : undefined,
+      rawData: {
+        search: item,
+      },
+    }
+  }
+
+  private async resolveTrackFromSearchItem(item: JbsouSearchItem, context: SourceContext): Promise<Track | null> {
     const signal = context.requestOverrides?.signal as AbortSignal | undefined
     if (signal?.aborted) {
       return null

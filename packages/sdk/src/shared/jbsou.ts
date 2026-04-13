@@ -57,7 +57,33 @@ export async function searchJbsouSite(
   return Array.isArray(payload.data) ? payload.data : []
 }
 
-export async function buildTrackFromJbsouItem(options: {
+export function buildSearchTrackFromJbsouItem(options: {
+  sourceName: string
+  rootSource: string
+  item: JbsouSearchItem
+}): Track | null {
+  const { sourceName, rootSource, item } = options
+  const songId = String(item.songid ?? '')
+  if (!songId) {
+    return null
+  }
+
+  const coverPath = String(item.cover ?? '')
+  return {
+    source: sourceName,
+    rootSource,
+    identifier: songId,
+    songName: sanitizeText(String(item.name ?? '')),
+    singers: sanitizeText(String(item.artist ?? '').replaceAll('/', ', ')),
+    album: sanitizeText(String(item.album ?? '')),
+    coverUrl: coverPath ? new URL(coverPath, JBSOU_BASE_URL).toString() : undefined,
+    rawData: {
+      search: item,
+    },
+  }
+}
+
+export async function resolveTrackFromJbsouItem(options: {
   sourceName: string
   rootSource: string
   item: JbsouSearchItem

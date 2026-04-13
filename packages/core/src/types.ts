@@ -20,9 +20,6 @@ export interface Track {
   downloadHeaders?: Record<string, string>
   rawData?: Record<string, unknown>
   episodes?: Track[]
-  fusedScore?: number
-  matchedSources?: string[]
-  alternatives?: Track[]
 }
 
 export interface SearchOptions {
@@ -35,9 +32,10 @@ export interface SearchOptions {
   searchRules?: SourceScopedConfig
 }
 
-export interface SearchFusionOptions extends SearchOptions {
-  rrfK?: number
-  timeoutMs?: number
+export interface FetchDetailOptions {
+  track: Track
+  initSourceConfig?: SourceScopedConfig
+  requestOverrides?: SourceScopedConfig
 }
 
 export interface DownloadOptions {
@@ -92,6 +90,7 @@ export interface SourceContext {
 export interface MusicSource {
   readonly name: string
   search: (input: SearchOptions, context: SourceContext) => Promise<Track[]>
+  fetchDetail: (input: FetchDetailOptions, context: SourceContext) => Promise<Track>
   download: (input: DownloadOptions, context: SourceContext) => Promise<DownloadResult>
   openTrackStream: (input: OpenTrackStreamOptions, context: SourceContext) => Promise<OpenedTrackStream>
   parsePlaylist?: (input: ParsePlaylistOptions, context: SourceContext) => Promise<Track[]>

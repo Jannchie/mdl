@@ -52,13 +52,44 @@ export class QianqianMusicSource extends BaseMusicSource {
     return safeGet(payload, ['data', 'typeTrack'], [])
   }
 
-  protected async parseSearchItem(item: unknown, context: SourceContext): Promise<Track | null> {
+  protected async buildSearchTrack(item: unknown, _context: SourceContext): Promise<Track | null> {
     const searchResult = item as Record<string, unknown>
     const songId = String(searchResult.TSID ?? '')
     if (!songId) {
       return null
     }
 
+    return {
+      source: this.name,
+      identifier: songId,
+      songName: sanitizeText(String(searchResult.title ?? '')),
+      singers: sanitizeText(
+        (safeGet(searchResult, ['artist'], []) as Array<{ name?: string }>)
+          .map(artist => artist.name)
+          .filter(Boolean)
+          .join(', '),
+      ),
+      album: sanitizeText(String(searchResult.albumTitle ?? '')),
+      coverUrl: String(searchResult.pic ?? '') || undefined,
+      rawData: {
+        search: searchResult,
+      },
+    }
+  }
+
+  protected async resolveTrackDetail(track: Track, context: SourceContext): Promise<Track> {
+    if (track.downloadUrl) {
+      return track
+    }
+
+    const searchResult = (track.rawData?.search as Record<string, unknown> | undefined) ?? {
+      TSID: track.identifier,
+      title: track.songName,
+      albumTitle: track.album,
+      artist: (track.singers ?? '').split(',').map(name => ({ name: name.trim() })).filter(item => item.name),
+      pic: track.coverUrl,
+    }
+    const songId = String(searchResult.TSID ?? track.identifier)
     for (const rate of QianqianMusicSource.qualities) {
       const payload = await this.parseClient.json<unknown>('https://music.91q.com/v1/song/tracklink', {
         query: this.signParams({
@@ -68,6 +99,8 @@ export class QianqianMusicSource extends BaseMusicSource {
         }),
         headers: context.requestOverrides?.headers as Record<string, string> | undefined,
         cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
+        signal: context.requestOverrides?.signal as AbortSignal | undefined,
       })
       const downloadUrl
         = String(safeGet(payload, ['data', 'path'], '')) || String(safeGet(payload, ['data', 'trail_audio_info', 'path'], ''))
@@ -83,6 +116,8 @@ export class QianqianMusicSource extends BaseMusicSource {
             await this.parseClient.text(lyricUrl, {
               headers: context.requestOverrides?.headers as Record<string, string> | undefined,
               cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
+              timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
+              signal: context.requestOverrides?.signal as AbortSignal | undefined,
             }),
           )
         }
@@ -94,6 +129,8 @@ export class QianqianMusicSource extends BaseMusicSource {
       const probe = await this.audioLinkTester.probe(downloadUrl, {
         headers: context.requestOverrides?.headers as Record<string, string> | undefined,
         cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
+        signal: context.requestOverrides?.signal as AbortSignal | undefined,
       })
       if (!(probe.ext && probe.ext !== 'NULL')) {
         continue
@@ -125,7 +162,7 @@ export class QianqianMusicSource extends BaseMusicSource {
       }
     }
 
-    return null
+    throw new Error(`Failed to fetch detail for ${track.identifier} from ${this.name}`)
   }
 
   override async parsePlaylist(input: ParsePlaylistOptions, context: SourceContext): Promise<Track[]> {
@@ -136,8 +173,10 @@ export class QianqianMusicSource extends BaseMusicSource {
     const resolvedUrl = await this.parseClient.resolveUrl(input.playlistUrl, {
       headers: context.requestOverrides?.headers as Record<string, string> | undefined,
       cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
+      timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
+      signal: context.requestOverrides?.signal as AbortSignal | undefined,
     })
-    const playlistId = resolvedUrl.split('/').pop()?.replace(/\.html?$/, '') ?? ''
+    const playlistId = new URL(resolvedUrl).pathname.split('/').pop()?.replace(/\.html?$/, '') ?? ''
     if (!playlistId) {
       return []
     }
@@ -153,6 +192,8 @@ export class QianqianMusicSource extends BaseMusicSource {
         }),
         headers: context.requestOverrides?.headers as Record<string, string> | undefined,
         cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
+        signal: context.requestOverrides?.signal as AbortSignal | undefined,
       })
       const items = safeGet(payload, ['data', 'trackList'], [])
       if (!Array.isArray(items) || items.length === 0) {
@@ -165,7 +206,7 @@ export class QianqianMusicSource extends BaseMusicSource {
       }
     }
 
-    const parsed = await Promise.all(tracksInPlaylist.map(item => this.parseSearchItem(item, context)))
+    const parsed = await Promise.all(tracksInPlaylist.map(item => this.buildSearchTrack(item, context)))
     return uniqueByIdentifier(parsed.filter((track): track is Track => track !== null))
   }
 

@@ -1,6 +1,7 @@
 import type {
   DownloadOptions,
   DownloadResult,
+  FetchDetailOptions,
   OpenedTrackStream,
   OpenTrackStreamOptions,
   ParsePlaylistOptions,
@@ -29,7 +30,8 @@ export abstract class BaseMusicSource {
 
   protected abstract buildSearchRequests(input: SearchOptions, context: SourceContext): SearchRequest[]
   protected abstract extractSearchItems(payload: unknown): unknown[]
-  protected abstract parseSearchItem(item: unknown, context: SourceContext): Promise<Track | null>
+  protected abstract buildSearchTrack(item: unknown, context: SourceContext): Promise<Track | null>
+  protected abstract resolveTrackDetail(track: Track, context: SourceContext): Promise<Track>
 
   protected get searchClient(): HttpClient {
     return new HttpClient(this.searchHeaders)
@@ -66,8 +68,8 @@ export abstract class BaseMusicSource {
         if (signal?.aborted) {
           return uniqueByIdentifier(results)
         }
-        const track = await this.parseSearchItem(item, context)
-        if (!track?.downloadUrl) {
+        const track = await this.buildSearchTrack(item, context)
+        if (!track) {
           continue
         }
         results.push(track)
@@ -77,6 +79,10 @@ export abstract class BaseMusicSource {
       }
     }
     return uniqueByIdentifier(results)
+  }
+
+  async fetchDetail(input: FetchDetailOptions, context: SourceContext): Promise<Track> {
+    return await this.resolveTrackDetail(input.track, context)
   }
 
   async download(input: DownloadOptions, context: SourceContext): Promise<DownloadResult> {
@@ -94,6 +100,8 @@ export abstract class BaseMusicSource {
           ...(context.requestOverrides?.headers as Record<string, string> | undefined),
         },
         cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
+        signal: context.requestOverrides?.signal as AbortSignal | undefined,
       })
       if (track.lyric && track.lyric !== 'NULL') {
         await ensureDir(path.dirname(savePath))

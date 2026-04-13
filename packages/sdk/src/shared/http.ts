@@ -56,12 +56,26 @@ export class HttpClient {
   }
 
   async downloadToFile(url: string, savePath: string, options: RequestOverrides = {}): Promise<void> {
-    const response = await this.openStream(url, options)
-    if (!response.ok || !response.body) {
-      throw new Error(`Failed to download ${response.url}`)
+    const controller = new AbortController()
+    const timeout = options.timeoutMs ? setTimeout(() => controller.abort(), options.timeoutMs) : null
+    const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal
+    try {
+      const response = await this.openStream(url, { ...options, signal })
+      if (!response.ok || !response.body) {
+        throw new Error(`Failed to download ${response.url}`)
+      }
+      await mkdir(path.dirname(savePath), { recursive: true })
+      await pipeline(
+        Readable.fromWeb(response.body as unknown as NodeReadableStream),
+        createWriteStream(savePath),
+        { signal },
+      )
     }
-    await mkdir(path.dirname(savePath), { recursive: true })
-    await pipeline(Readable.fromWeb(response.body as unknown as NodeReadableStream), createWriteStream(savePath))
+    finally {
+      if (timeout) {
+        clearTimeout(timeout)
+      }
+    }
   }
 
   async probeAudio(url: string, options: RequestOverrides = {}): Promise<AudioProbe> {

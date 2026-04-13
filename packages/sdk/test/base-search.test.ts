@@ -25,16 +25,22 @@ class TestMusicSource extends BaseMusicSource {
     return (payload as { items?: unknown[] }).items ?? []
   }
 
-  protected async parseSearchItem(item: unknown): Promise<Track | null> {
+  protected async buildSearchTrack(item: unknown): Promise<Track | null> {
     const identifier = String((item as { id?: string }).id ?? '')
     return identifier
       ? {
           source: this.name,
           identifier,
           songName: identifier,
-          downloadUrl: `https://example.com/${identifier}.mp3`,
         }
       : null
+  }
+
+  protected async resolveTrackDetail(track: Track): Promise<Track> {
+    return {
+      ...track,
+      downloadUrl: `https://example.com/${track.identifier}.mp3`,
+    }
   }
 }
 

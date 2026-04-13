@@ -6,6 +6,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./dev": {
+      "types": "./src/dev.ts",
+      "default": "./src/dev.ts"
     }
   },
   "main": "./dist/index.js",
