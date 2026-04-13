@@ -1,4 +1,5 @@
-import type { ParsePlaylistOptions, SearchOptions, SourceContext, Track } from '@jannchie/mdl-core'
+import type { TrackDetail, TrackLookup, TrackSummary } from '@jannchie/mdl-core'
+import type { ParsePlaylistRequest, SearchRequest, SourceContext } from '@jannchie/mdl-core/internal'
 
 import { bytesToMb, cleanLyric, hostMatches, resolveRequestedSearchCount, resolveSearchPageSize, safeGet, sanitizeText, secondsToHms, uniqueByIdentifier } from '../shared/utils.js'
 import { BaseMusicSource } from './base.js'
@@ -16,7 +17,7 @@ export class KuwoMusicSource extends BaseMusicSource {
 
   private static readonly qualityLevels = ['lossless', 'exhigh', 'standard']
 
-  protected buildSearchRequests(input: SearchOptions) {
+  protected buildSearchRequests(input: SearchRequest) {
     const pageSize = resolveSearchPageSize(input)
     const total = resolveRequestedSearchCount(input, pageSize)
     const requests = []
@@ -47,7 +48,7 @@ export class KuwoMusicSource extends BaseMusicSource {
     return safeGet(payload, ['abslist'], [])
   }
 
-  protected async buildSearchTrack(item: unknown, _context: SourceContext): Promise<Track | null> {
+  protected async buildSearchTrack(item: unknown, _context: SourceContext): Promise<TrackSummary | null> {
     const searchResult = item as Record<string, unknown>
     const songId = String(searchResult.MUSICRID ?? searchResult.musicrid ?? '').replace(/^MUSIC_/, '')
     if (!songId) {
@@ -67,16 +68,16 @@ export class KuwoMusicSource extends BaseMusicSource {
     }
   }
 
-  protected async resolveTrackDetail(track: Track, context: SourceContext): Promise<Track> {
-    if (track.downloadUrl) {
+  protected async resolveTrackDetail(track: TrackLookup, context: SourceContext): Promise<TrackDetail> {
+    if (this.isDetailedTrack(track)) {
       return track
     }
 
-    const signal = context.requestOverrides?.signal as AbortSignal | undefined
+    const signal = context.requestOptions?.signal as AbortSignal | undefined
     if (signal?.aborted) {
       throw new Error('aborted')
     }
-    const searchResult = (track.rawData?.search as Record<string, unknown> | undefined) ?? {
+    const searchResult: Record<string, unknown> = (track.rawData?.search as Record<string, unknown> | undefined) ?? {
       MUSICRID: track.identifier,
       SONGNAME: track.songName,
       ARTIST: track.singers,
@@ -96,10 +97,10 @@ export class KuwoMusicSource extends BaseMusicSource {
           level,
           format: 'json',
         },
-        headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-        cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-        signal: context.requestOverrides?.signal as AbortSignal | undefined,
+        headers: context.requestOptions?.headers as Record<string, string> | undefined,
+        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+        signal: context.requestOptions?.signal as AbortSignal | undefined,
       })
       const downloadUrl = String(safeGet(payload, ['data', 'url'], ''))
       if (!downloadUrl.startsWith('http')) {
@@ -107,20 +108,20 @@ export class KuwoMusicSource extends BaseMusicSource {
       }
 
       const downloadUrlStatus = await this.audioLinkTester.test(downloadUrl, {
-        headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-        cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-        signal: context.requestOverrides?.signal as AbortSignal | undefined,
+        headers: context.requestOptions?.headers as Record<string, string> | undefined,
+        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+        signal: context.requestOptions?.signal as AbortSignal | undefined,
       })
       if (!downloadUrlStatus.ok) {
         continue
       }
 
       const probe = await this.audioLinkTester.probe(downloadUrl, {
-        headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-        cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-        signal: context.requestOverrides?.signal as AbortSignal | undefined,
+        headers: context.requestOptions?.headers as Record<string, string> | undefined,
+        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+        signal: context.requestOptions?.signal as AbortSignal | undefined,
       })
       if (!(probe.ext && probe.ext !== 'NULL')) {
         continue
@@ -153,8 +154,8 @@ export class KuwoMusicSource extends BaseMusicSource {
     throw new Error(`Failed to fetch detail for ${track.identifier} from ${this.name}`)
   }
 
-  override async parsePlaylist(input: ParsePlaylistOptions, context: SourceContext): Promise<Track[]> {
-    const signal = context.requestOverrides?.signal as AbortSignal | undefined
+  override async parsePlaylist(input: ParsePlaylistRequest, context: SourceContext): Promise<TrackSummary[]> {
+    const signal = context.requestOptions?.signal as AbortSignal | undefined
     if (signal?.aborted) {
       return []
     }
@@ -163,8 +164,8 @@ export class KuwoMusicSource extends BaseMusicSource {
     }
 
     const resolvedUrl = await this.parseClient.resolveUrl(input.playlistUrl, {
-      headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-      cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
+      headers: context.requestOptions?.headers as Record<string, string> | undefined,
+      cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
     })
     const url = new URL(resolvedUrl)
     const playlistId = url.searchParams.get('id') ?? url.pathname.split('/').pop()?.replace(/\.html?$/, '') ?? ''
@@ -183,10 +184,10 @@ export class KuwoMusicSource extends BaseMusicSource {
           pn: page,
           rn: 100,
         },
-        headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-        cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-        signal: context.requestOverrides?.signal as AbortSignal | undefined,
+        headers: context.requestOptions?.headers as Record<string, string> | undefined,
+        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+        signal: context.requestOptions?.signal as AbortSignal | undefined,
       })
       const items = safeGet(payload, ['data', 'musicList'], [])
       if (!Array.isArray(items) || items.length === 0) {
@@ -201,7 +202,7 @@ export class KuwoMusicSource extends BaseMusicSource {
 
     const deduped = [...new Map(tracks.map(track => [String((track as Record<string, unknown>).musicrid ?? ''), track])).values()]
     const parsed = await Promise.all(deduped.map(track => this.buildSearchTrack(track, context)))
-    return uniqueByIdentifier(parsed.filter((track): track is Track => track !== null))
+    return uniqueByIdentifier(parsed.filter((track): track is TrackSummary => track !== null))
   }
 
   private parseSizeMb(value: string): number {

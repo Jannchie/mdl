@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import packageJson from '../package.json' with { type: 'json' }
-import { cliVersion, parseIntegerOption, parseTrack, parseTrackList } from '../src/index.js'
+import { parseIntegerOption, parseTrack, parseTrackList } from '../src/app.js'
+import { cliVersion } from '../src/index.js'
 
 describe('cli helpers', () => {
   it('uses the package version', () => {
@@ -22,11 +23,11 @@ describe('cli helpers', () => {
     expect(parseTrack('{"source":"A","identifier":"1","songName":"demo"}')).toEqual(
       { source: 'A', identifier: '1', songName: 'demo' },
     )
-    expect(parseTrackList('[{"source":"A","identifier":"1","songName":"demo"}]')).toEqual([
-      { source: 'A', identifier: '1', songName: 'demo' },
+    expect(parseTrackList('[{"source":"A","identifier":"1","songName":"demo","downloadUrl":"https://example.com/demo.mp3"}]')).toEqual([
+      { source: 'A', identifier: '1', songName: 'demo', downloadUrl: 'https://example.com/demo.mp3' },
     ])
-    expect(() => parseTrack('[{"source":"A"}]')).toThrow('Input file must contain a JSON track object')
+    expect(() => parseTrack('[{"source":"A"}]')).toThrow('Input file must contain a JSON track summary object')
     expect(() => parseTrackList('{"source":"A"}')).toThrow('Input file must contain a JSON array of tracks')
-    expect(() => parseTrackList('[{"source":"A"}]')).toThrow('Invalid track at index 0')
+    expect(() => parseTrackList('[{"source":"A"}]')).toThrow('Invalid track detail at index 0')
   })
 })

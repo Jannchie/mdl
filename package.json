@@ -7,7 +7,8 @@
   "scripts": {
     "build": "tsc -b",
     "mdl": "sh -c 'while [ \"$1\" = \"--\" ]; do shift; done && pnpm exec tsx packages/cli/src/dev.ts \"$@\"' --",
-    "api:dev": "pnpm exec tsx packages/api/src/dev.ts",
+    "api": "pnpm run api:dev",
+    "api:dev": "pnpm --filter @mdl/api run dev",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -b --pretty false",

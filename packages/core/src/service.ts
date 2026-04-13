@@ -1,14 +1,23 @@
 import type {
+  DownloadRequest,
+  FetchDetailRequest,
+  MusicSource,
+  OpenTrackStreamRequest,
+  ParsePlaylistRequest,
+  SearchRequest,
+  SourceContext,
+} from './internal-types.js'
+import type {
   DownloadOptions,
   DownloadResult,
   FetchDetailOptions,
-  MusicSource,
   OpenedTrackStream,
   OpenTrackStreamOptions,
   ParsePlaylistOptions,
   SearchOptions,
-  SourceContext,
-  Track,
+  TrackDetail,
+  TrackLookup,
+  TrackSummary,
 } from './types.js'
 
 export class MusicService {
@@ -24,12 +33,13 @@ export class MusicService {
     return [...this.sources.keys()].sort()
   }
 
-  async search(options: SearchOptions): Promise<Record<string, Track[]>> {
-    const selected = this.resolveSources(options.sources)
+  async search(keyword: string, options: SearchOptions = {}): Promise<Record<string, TrackSummary[]>> {
+    const request: SearchRequest = { ...options, keyword }
+    const selected = this.resolveSources(request.sources)
     const entries = await Promise.all(
       selected.map(async (source) => {
-        const context = this.buildContext(source.name, options)
-        const tracks = await source.search(options, context)
+        const context = this.buildContext(source.name, request)
+        const tracks = await source.search(request, context)
         return [source.name, tracks] as const
       }),
     )
@@ -37,22 +47,24 @@ export class MusicService {
     return Object.fromEntries(entries)
   }
 
-  async fetchDetail(options: FetchDetailOptions): Promise<Track> {
-    const source = this.sources.get(options.track.source)
+  async fetchDetail(track: TrackLookup, options: FetchDetailOptions = {}): Promise<TrackDetail> {
+    const request: FetchDetailRequest = { ...options, track }
+    const source = this.sources.get(request.track.source)
     if (!source) {
-      throw new Error(`Unknown source: ${options.track.source}`)
+      throw new Error(`Unknown source: ${request.track.source}`)
     }
 
     const context: SourceContext = {
-      initConfig: options.initSourceConfig?.[source.name],
-      requestOverrides: options.requestOverrides?.[source.name],
+      sourceOptions: request.sourceOptions?.[source.name],
+      requestOptions: request.requestOptions?.[source.name],
     }
-    return await source.fetchDetail(options, context)
+    return await source.fetchDetail(request, context)
   }
 
-  async download(options: DownloadOptions): Promise<DownloadResult[]> {
-    const grouped = new Map<string, Track[]>()
-    for (const track of options.tracks) {
+  async download(tracks: TrackDetail[], options: DownloadOptions = {}): Promise<DownloadResult[]> {
+    const request: DownloadRequest = { ...options, tracks }
+    const grouped = new Map<string, TrackDetail[]>()
+    for (const track of request.tracks) {
       const existing = grouped.get(track.source) ?? []
       existing.push(track)
       grouped.set(track.source, existing)
@@ -66,32 +78,34 @@ export class MusicService {
       }
 
       const context: SourceContext = {
-        requestOverrides: options.requestOverrides?.[sourceName],
+        requestOptions: request.requestOptions?.[sourceName],
       }
-      results.push(await source.download({ ...options, tracks }, context))
+      results.push(await source.download({ ...request, tracks }, context))
     }
     return results
   }
 
-  async openTrackStream(options: OpenTrackStreamOptions): Promise<OpenedTrackStream> {
-    const source = this.sources.get(options.track.source)
+  async openTrackStream(track: TrackDetail, options: OpenTrackStreamOptions = {}): Promise<OpenedTrackStream> {
+    const request: OpenTrackStreamRequest = { ...options, track }
+    const source = this.sources.get(request.track.source)
     if (!source) {
-      throw new Error(`Unknown source: ${options.track.source}`)
+      throw new Error(`Unknown source: ${request.track.source}`)
     }
     const context: SourceContext = {
-      requestOverrides: options.requestOverrides?.[source.name],
+      requestOptions: request.requestOptions?.[source.name],
     }
-    return await source.openTrackStream(options, context)
+    return await source.openTrackStream(request, context)
   }
 
-  async parsePlaylist(options: ParsePlaylistOptions): Promise<Track[]> {
-    const selected = this.resolveSources(options.sources)
+  async parsePlaylist(playlistUrl: string, options: ParsePlaylistOptions = {}): Promise<TrackSummary[]> {
+    const request: ParsePlaylistRequest = { ...options, playlistUrl }
+    const selected = this.resolveSources(request.sources)
     for (const source of selected) {
       if (!source.parsePlaylist) {
         continue
       }
-      const context = this.buildContext(source.name, options)
-      const tracks = await source.parsePlaylist(options, context)
+      const context = this.buildContext(source.name, request)
+      const tracks = await source.parsePlaylist(request, context)
       if (tracks.length > 0) {
         return tracks
       }
@@ -115,12 +129,12 @@ export class MusicService {
 
   private buildContext(
     sourceName: string,
-    options: Pick<SearchOptions, 'initSourceConfig' | 'requestOverrides' | 'searchRules'>,
+    options: Pick<SearchRequest, 'sourceOptions' | 'requestOptions' | 'sourceSearchOptions'>,
   ): SourceContext {
     return {
-      initConfig: options.initSourceConfig?.[sourceName],
-      requestOverrides: options.requestOverrides?.[sourceName],
-      searchRule: options.searchRules?.[sourceName],
+      sourceOptions: options.sourceOptions?.[sourceName],
+      requestOptions: options.requestOptions?.[sourceName],
+      sourceSearchOptions: options.sourceSearchOptions?.[sourceName],
     }
   }
 }

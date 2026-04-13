@@ -1,4 +1,4 @@
-import type { Track } from '@jannchie/mdl-sdk'
+import type { TrackDetail, TrackSummary } from '@jannchie/mdl-core'
 
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -23,10 +23,10 @@ const Table = require('cli-table3') as AsciiTableConstructor
 
 export interface CliClient {
   listSources: () => string[]
-  search: (options: { keyword: string, sources?: string[] }) => Promise<Record<string, Track[]>>
-  fetchDetail: (options: { track: Track }) => Promise<Track>
-  parsePlaylist: (options: { playlistUrl: string, sources?: string[] }) => Promise<Track[]>
-  download: (options: { tracks: Track[], outputDir?: string }) => Promise<unknown>
+  search: (keyword: string, options?: { sources?: string[] }) => Promise<Record<string, TrackSummary[]>>
+  fetchDetail: (track: TrackSummary) => Promise<TrackDetail>
+  parsePlaylist: (playlistUrl: string, options?: { sources?: string[] }) => Promise<TrackSummary[]>
+  download: (tracks: TrackDetail[], options?: { outputDir?: string }) => Promise<unknown>
 }
 
 export function parseSources(value?: string): string[] | undefined {
@@ -48,7 +48,7 @@ export function parseIntegerOption(value: string | undefined, optionName: string
   return parsed
 }
 
-function isTrack(value: unknown): value is Track {
+function isTrackSummary(value: unknown): value is TrackSummary {
   if (!value || typeof value !== 'object') {
     return false
   }
@@ -59,7 +59,15 @@ function isTrack(value: unknown): value is Track {
     && typeof track.songName === 'string'
 }
 
-export function parseTrack(content: string): Track {
+function isTrackDetail(value: unknown): value is TrackDetail {
+  if (!isTrackSummary(value)) {
+    return false
+  }
+
+  return typeof (value as unknown as { downloadUrl?: unknown }).downloadUrl === 'string'
+}
+
+export function parseTrack(content: string): TrackSummary {
   let parsed: unknown
   try {
     parsed = JSON.parse(content)
@@ -68,13 +76,13 @@ export function parseTrack(content: string): Track {
     throw new Error(`Invalid JSON in input file: ${error instanceof Error ? error.message : String(error)}`)
   }
 
-  if (!isTrack(parsed)) {
-    throw new TypeError('Input file must contain a JSON track object')
+  if (!isTrackSummary(parsed)) {
+    throw new TypeError('Input file must contain a JSON track summary object')
   }
   return parsed
 }
 
-export function parseTrackList(content: string): Track[] {
+export function parseTrackList(content: string): TrackDetail[] {
   let parsed: unknown
   try {
     parsed = JSON.parse(content)
@@ -87,8 +95,8 @@ export function parseTrackList(content: string): Track[] {
     throw new TypeError('Input file must contain a JSON array of tracks')
   }
   for (const [index, item] of parsed.entries()) {
-    if (!isTrack(item)) {
-      throw new TypeError(`Invalid track at index ${index}`)
+    if (!isTrackDetail(item)) {
+      throw new TypeError(`Invalid track detail at index ${index}`)
     }
   }
   return parsed
@@ -130,7 +138,7 @@ function renderSourcesTable(sources: string[]): string {
   return table.toString()
 }
 
-function renderTrackTable(tracks: Track[]): string {
+function renderTrackTable(tracks: TrackSummary[]): string {
   const table = createAsciiTable(['Song', 'Singers', 'Album'])
   for (const track of tracks) {
     table.push([
@@ -142,7 +150,7 @@ function renderTrackTable(tracks: Track[]): string {
   return table.toString()
 }
 
-function renderPlaylistTable(tracks: Track[]): string {
+function renderPlaylistTable(tracks: TrackSummary[]): string {
   const table = createAsciiTable(['Song', 'Singers', 'Source'])
   for (const track of tracks) {
     table.push([
@@ -171,8 +179,7 @@ export function createCli(client: CliClient, version: string) {
     .option('-s, --sources <sources>', 'comma-separated source list')
     .option('--json', 'print full JSON')
     .action(async (keyword: string, options: { sources?: string, json?: boolean }) => {
-      const result = await client.search({
-        keyword,
+      const result = await client.search(keyword, {
         sources: parseSources(options.sources),
       })
       if (options.json) {
@@ -188,7 +195,7 @@ export function createCli(client: CliClient, version: string) {
 
   cli
     .command('fetch-detail', 'Fetch full detail for a track from a JSON file')
-    .option('-i, --input <file>', 'path to a JSON file containing one Track')
+    .option('-i, --input <file>', 'path to a JSON file containing one TrackSummary')
     .action(async (options: { input?: string }) => {
       if (!options.input) {
         throw new Error('Missing required option --input')
@@ -196,7 +203,7 @@ export function createCli(client: CliClient, version: string) {
 
       const content = await readFile(options.input, 'utf8')
       const track = parseTrack(content)
-      const result = await client.fetchDetail({ track })
+      const result = await client.fetchDetail(track)
       console.log(JSON.stringify(result, null, 2))
     })
 
@@ -205,8 +212,7 @@ export function createCli(client: CliClient, version: string) {
     .option('-s, --sources <sources>', 'comma-separated source list')
     .option('--json', 'print full JSON')
     .action(async (playlistUrl: string, options: { sources?: string, json?: boolean }) => {
-      const result = await client.parsePlaylist({
-        playlistUrl,
+      const result = await client.parsePlaylist(playlistUrl, {
         sources: parseSources(options.sources),
       })
       if (options.json) {
@@ -219,7 +225,7 @@ export function createCli(client: CliClient, version: string) {
 
   cli
     .command('download', 'Download tracks from a JSON file')
-    .option('-i, --input <file>', 'path to a JSON file containing Track[]')
+    .option('-i, --input <file>', 'path to a JSON file containing TrackDetail[]')
     .option('-o, --output <dir>', 'output directory')
     .action(async (options: { input?: string, output?: string }) => {
       if (!options.input) {
@@ -228,8 +234,7 @@ export function createCli(client: CliClient, version: string) {
 
       const content = await readFile(options.input, 'utf8')
       const tracks = parseTrackList(content)
-      const result = await client.download({
-        tracks,
+      const result = await client.download(tracks, {
         outputDir: options.output,
       })
       console.log(JSON.stringify(result, null, 2))

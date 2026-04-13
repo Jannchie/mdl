@@ -1,6 +1,7 @@
-import type { SearchOptions, SourceContext, Track } from '@jannchie/mdl-core'
+import type { TrackDetail, TrackLookup, TrackSummary } from '@jannchie/mdl-core'
+import type { SearchRequest, SourceContext } from '@jannchie/mdl-core/internal'
 
-import { extractAlbumFromLyric } from '../shared/jbsou.js'
+import { extractAlbumFromLyric, refreshJbsouSearchItem } from '../shared/jbsou.js'
 import { getQQSongDetail } from '../shared/qq.js'
 import { cleanLyric, sanitizeText, secondsToHms } from '../shared/utils.js'
 import { BaseMusicSource } from './base.js'
@@ -37,25 +38,13 @@ export class QQMusicSource extends BaseMusicSource {
     'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
   }
 
-  protected buildSearchRequests(): Array<{ url: string }> {
-    return []
-  }
-
-  protected extractSearchItems(): unknown[] {
-    return []
-  }
-
-  protected async buildSearchTrack(_item: unknown, _context: SourceContext): Promise<Track | null> {
-    return null
-  }
-
-  override async search(input: SearchOptions, context: SourceContext): Promise<Track[]> {
-    const signal = context.requestOverrides?.signal as AbortSignal | undefined
+  override async search(input: SearchRequest, context: SourceContext): Promise<TrackSummary[]> {
+    const signal = context.requestOptions?.signal as AbortSignal | undefined
     const response = await fetch('https://www.jbsou.cn/', {
       method: 'POST',
       headers: {
         ...this.searchHeaders,
-        ...(context.requestOverrides?.headers as Record<string, string> | undefined),
+        ...(context.requestOptions?.headers as Record<string, string> | undefined),
       },
       body: new URLSearchParams({
         input: input.keyword,
@@ -71,8 +60,8 @@ export class QQMusicSource extends BaseMusicSource {
 
     const payload = (await response.json()) as { data?: JbsouSearchItem[] }
     const items = Array.isArray(payload.data) ? payload.data : []
-    const limit = input.searchSizePerSource
-    const results: Track[] = []
+    const limit = input.limit
+    const results: TrackSummary[] = []
     for (const item of limit === undefined ? items : items.slice(0, limit)) {
       if (signal?.aborted) {
         break
@@ -85,24 +74,52 @@ export class QQMusicSource extends BaseMusicSource {
     return results
   }
 
-  protected async resolveTrackDetail(track: Track, context: SourceContext): Promise<Track> {
-    if (track.downloadUrl) {
+  protected async resolveTrackDetail(track: TrackLookup, context: SourceContext): Promise<TrackDetail> {
+    if (this.isDetailedTrack(track)) {
       return track
     }
 
     const item = track.rawData?.search as JbsouSearchItem | undefined
-    if (!item) {
-      throw new Error(`Track ${track.identifier} from ${this.name} is missing QQ search metadata`)
+    if (item) {
+      const detailed = await this.resolveTrackFromSearchItem(item, context)
+      if (detailed) {
+        return detailed
+      }
     }
 
-    const detailed = await this.resolveTrackFromSearchItem(item, context)
+    const refreshedItem = await this.refreshSearchItem(track, context)
+    const detailed = refreshedItem
+      ? await this.resolveTrackFromSearchItem(refreshedItem, context)
+      : null
     if (!detailed) {
       throw new Error(`Failed to fetch detail for ${track.identifier} from ${this.name}`)
     }
     return detailed
   }
 
-  private buildTrackFromSearchItem(item: JbsouSearchItem): Track | null {
+  private async refreshSearchItem(track: TrackLookup, context: SourceContext): Promise<JbsouSearchItem | null> {
+    const signal = context.requestOptions?.signal as AbortSignal | undefined
+    const detail = await getQQSongDetail(track.identifier)
+    const detailSingers = Array.isArray(detail?.singer)
+      ? detail.singer.map(item => item.name).filter(Boolean).join(', ')
+      : undefined
+
+    return await refreshJbsouSearchItem({
+      site: 'qq',
+      identifier: track.identifier,
+      track: {
+        songName: track.songName ?? detail?.name,
+        singers: track.singers ?? detailSingers,
+      },
+      headers: {
+        ...this.searchHeaders,
+        ...(context.requestOptions?.headers as Record<string, string> | undefined),
+      },
+      signal,
+    })
+  }
+
+  private buildTrackFromSearchItem(item: JbsouSearchItem): TrackSummary | null {
     const songId = String(item.songid ?? '')
     if (!songId) {
       return null
@@ -122,8 +139,8 @@ export class QQMusicSource extends BaseMusicSource {
     }
   }
 
-  private async resolveTrackFromSearchItem(item: JbsouSearchItem, context: SourceContext): Promise<Track | null> {
-    const signal = context.requestOverrides?.signal as AbortSignal | undefined
+  private async resolveTrackFromSearchItem(item: JbsouSearchItem, context: SourceContext): Promise<TrackDetail | null> {
+    const signal = context.requestOptions?.signal as AbortSignal | undefined
     if (signal?.aborted) {
       return null
     }
@@ -135,9 +152,9 @@ export class QQMusicSource extends BaseMusicSource {
 
     const redirectUrl = new URL(redirectPath, 'https://www.jbsou.cn/').toString()
     const resolvedUrl = await this.parseClient.resolveUrl(redirectUrl, {
-      headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-      cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-      timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
+      headers: context.requestOptions?.headers as Record<string, string> | undefined,
+      cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+      timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
       signal,
     })
     if (!resolvedUrl.startsWith('http')) {
@@ -145,9 +162,9 @@ export class QQMusicSource extends BaseMusicSource {
     }
 
     const downloadUrlStatus = await this.audioLinkTester.test(resolvedUrl, {
-      headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-      cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-      timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
+      headers: context.requestOptions?.headers as Record<string, string> | undefined,
+      cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+      timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
       signal,
     })
     if (!downloadUrlStatus.ok) {
@@ -155,9 +172,9 @@ export class QQMusicSource extends BaseMusicSource {
     }
 
     const probe = await this.audioLinkTester.probe(resolvedUrl, {
-      headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-      cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-      timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
+      headers: context.requestOptions?.headers as Record<string, string> | undefined,
+      cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+      timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
       signal,
     })
     if (!(probe.ext && probe.ext !== 'NULL')) {
@@ -173,9 +190,9 @@ export class QQMusicSource extends BaseMusicSource {
       try {
         lyric = cleanLyric(
           await this.parseClient.text(new URL(lyricPath, 'https://www.jbsou.cn/').toString(), {
-            headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-            cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-            timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
+            headers: context.requestOptions?.headers as Record<string, string> | undefined,
+            cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+            timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
             signal,
           }),
         )

@@ -1,4 +1,5 @@
-import type { ParsePlaylistOptions, SearchOptions, SourceContext, Track } from '@jannchie/mdl-core'
+import type { TrackDetail, TrackLookup, TrackSummary } from '@jannchie/mdl-core'
+import type { ParsePlaylistRequest, SearchRequest, SourceContext } from '@jannchie/mdl-core/internal'
 
 import { bytesToMb, cleanLyric, hostMatches, resolveRequestedSearchCount, resolveSearchPageSize, safeGet, sanitizeText, secondsToHms, uniqueByIdentifier } from '../shared/utils.js'
 import { BaseMusicSource } from './base.js'
@@ -36,10 +37,10 @@ export class MiguMusicSource extends BaseMusicSource {
     ['ZQ32', 'flac'],
   ])
 
-  protected buildSearchRequests(input: SearchOptions, context: SourceContext) {
+  protected buildSearchRequests(input: SearchRequest, context: SourceContext) {
     const pageSize = resolveSearchPageSize(input)
     const total = resolveRequestedSearchCount(input, pageSize)
-    const searchRule = context.searchRule ?? {}
+    const searchRule = context.sourceSearchOptions ?? {}
     const requests = []
     for (let count = 0; count < total; count += pageSize) {
       requests.push({
@@ -69,9 +70,9 @@ export class MiguMusicSource extends BaseMusicSource {
     return safeGet(payload, ['songResultData', 'result'], [])
   }
 
-  override async search(input: SearchOptions, context: SourceContext): Promise<Track[]> {
+  override async search(input: SearchRequest, context: SourceContext): Promise<TrackSummary[]> {
     const requestCount = resolveRequestedSearchCount(input)
-    const results: Track[] = []
+    const results: TrackSummary[] = []
     for (let index = 1; index <= requestCount; index += 1) {
       const payload = await this.searchClient.json<unknown>('https://api.xcvts.cn/api/music/migu', {
         query: {
@@ -80,10 +81,10 @@ export class MiguMusicSource extends BaseMusicSource {
           num: Math.max(requestCount, resolveSearchPageSize(input, requestCount)),
           type: 'json',
         },
-        headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-        cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-        signal: context.requestOverrides?.signal as AbortSignal | undefined,
+        headers: context.requestOptions?.headers as Record<string, string> | undefined,
+        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+        signal: context.requestOptions?.signal as AbortSignal | undefined,
       })
       const track = this.buildTrackFromXcvtsItem(payload)
       if (track) {
@@ -93,7 +94,7 @@ export class MiguMusicSource extends BaseMusicSource {
     return uniqueByIdentifier(results)
   }
 
-  protected async buildSearchTrack(item: unknown, _context: SourceContext): Promise<Track | null> {
+  protected async buildSearchTrack(item: unknown, _context: SourceContext): Promise<TrackSummary | null> {
     const searchResult = item as Record<string, unknown>
     const contentId = String(searchResult.contentId ?? '')
     if (!contentId) {
@@ -127,8 +128,8 @@ export class MiguMusicSource extends BaseMusicSource {
     }
   }
 
-  protected async resolveTrackDetail(track: Track, context: SourceContext): Promise<Track> {
-    if (track.downloadUrl) {
+  protected async resolveTrackDetail(track: TrackLookup, context: SourceContext): Promise<TrackDetail> {
+    if (this.isDetailedTrack(track)) {
       return track
     }
 
@@ -141,20 +142,25 @@ export class MiguMusicSource extends BaseMusicSource {
       return detailed
     }
 
-    const detailed = await this.resolveTrackFromSearchItem(searchResult ?? {
+    const fallbackSearchResult: Record<string, unknown> = {
       contentId: track.identifier,
       name: track.songName,
       album: track.album,
-      singers: (track.singers ?? '').split(',').map(name => ({ name: name.trim() })).filter(item => item.name),
+      singers: (track.singers ?? '')
+        .split(',')
+        .map((name: string) => ({ name: name.trim() }))
+        .filter((item: { name: string }) => item.name),
       img3: track.coverUrl,
-    }, context)
+    }
+
+    const detailed = await this.resolveTrackFromSearchItem(searchResult ?? fallbackSearchResult, context)
     if (!detailed) {
       throw new Error(`Failed to fetch detail for ${track.identifier} from ${this.name}`)
     }
     return detailed
   }
 
-  private async resolveTrackFromSearchItem(item: unknown, context: SourceContext): Promise<Track | null> {
+  private async resolveTrackFromSearchItem(item: unknown, context: SourceContext): Promise<TrackDetail | null> {
     const searchResult = item as Record<string, unknown>
     const contentId = String(searchResult.contentId ?? '')
     if (!contentId) {
@@ -186,8 +192,8 @@ export class MiguMusicSource extends BaseMusicSource {
           copyrightId: contentId,
           lowerQualityContentId: contentId,
         },
-        headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-        cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
+        headers: context.requestOptions?.headers as Record<string, string> | undefined,
+        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
       })
 
       let downloadUrl = safeGet(payload, ['data', 'url'], '')
@@ -197,19 +203,19 @@ export class MiguMusicSource extends BaseMusicSource {
 
       downloadUrl = downloadUrl.replace('/MP3_128_16_Stero/', '/MP3_320_16_Stero/')
       const downloadUrlStatus = await this.audioLinkTester.test(downloadUrl, {
-        headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-        cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-        signal: context.requestOverrides?.signal as AbortSignal | undefined,
+        headers: context.requestOptions?.headers as Record<string, string> | undefined,
+        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+        signal: context.requestOptions?.signal as AbortSignal | undefined,
       })
       if (!downloadUrlStatus.ok) {
         continue
       }
       const probe = await this.audioLinkTester.probe(downloadUrl, {
-        headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-        cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-        signal: context.requestOverrides?.signal as AbortSignal | undefined,
+        headers: context.requestOptions?.headers as Record<string, string> | undefined,
+        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+        signal: context.requestOptions?.signal as AbortSignal | undefined,
       })
       if (!(probe.ext && probe.ext !== 'NULL')) {
         continue
@@ -220,10 +226,10 @@ export class MiguMusicSource extends BaseMusicSource {
       if (lyricUrl.startsWith('http')) {
         try {
           lyric = cleanLyric(await this.parseClient.text(lyricUrl, {
-            headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-            cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-            timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-            signal: context.requestOverrides?.signal as AbortSignal | undefined,
+            headers: context.requestOptions?.headers as Record<string, string> | undefined,
+            cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+            timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+            signal: context.requestOptions?.signal as AbortSignal | undefined,
           }))
         }
         catch {
@@ -270,16 +276,16 @@ export class MiguMusicSource extends BaseMusicSource {
     return null
   }
 
-  override async parsePlaylist(input: ParsePlaylistOptions, context: SourceContext): Promise<Track[]> {
+  override async parsePlaylist(input: ParsePlaylistRequest, context: SourceContext): Promise<TrackSummary[]> {
     if (!hostMatches(input.playlistUrl, MIGU_HOSTS)) {
       return []
     }
 
     const resolvedUrl = await this.parseClient.resolveUrl(input.playlistUrl, {
-      headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-      cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-      timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-      signal: context.requestOverrides?.signal as AbortSignal | undefined,
+      headers: context.requestOptions?.headers as Record<string, string> | undefined,
+      cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+      timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+      signal: context.requestOptions?.signal as AbortSignal | undefined,
     })
     const url = new URL(resolvedUrl)
     const playlistId = url.searchParams.get('playlistId') ?? url.pathname.split('/').pop()?.replace(/\.html?$/, '') ?? ''
@@ -295,10 +301,10 @@ export class MiguMusicSource extends BaseMusicSource {
           pageSize: 50,
           playlistId,
         },
-        headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-        cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-        signal: context.requestOverrides?.signal as AbortSignal | undefined,
+        headers: context.requestOptions?.headers as Record<string, string> | undefined,
+        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+        signal: context.requestOptions?.signal as AbortSignal | undefined,
       })
       const items = safeGet(payload, ['data', 'songList'], [])
       if (!Array.isArray(items) || items.length === 0) {
@@ -312,7 +318,7 @@ export class MiguMusicSource extends BaseMusicSource {
     }
 
     const parsed = await Promise.all(tracks.map(item => this.buildSearchTrack(item, context)))
-    return uniqueByIdentifier(parsed.filter((track): track is Track => track !== null))
+    return uniqueByIdentifier(parsed.filter((track): track is TrackSummary => track !== null))
   }
 
   private parseRateSize(rate: Record<string, unknown>): number {
@@ -335,7 +341,7 @@ export class MiguMusicSource extends BaseMusicSource {
     return value.startsWith('http') ? value : new URL(value, 'https://d.musicapp.migu.cn').toString()
   }
 
-  private async parseXcvtsItem(payload: unknown, context: SourceContext): Promise<Track | null> {
+  private async parseXcvtsItem(payload: unknown, context: SourceContext): Promise<TrackDetail | null> {
     const data = payload as Record<string, unknown>
     const downloadUrl = String(data.music_url ?? '')
     if (!downloadUrl.startsWith('http')) {
@@ -343,20 +349,20 @@ export class MiguMusicSource extends BaseMusicSource {
     }
 
     const downloadUrlStatus = await this.audioLinkTester.test(downloadUrl, {
-      headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-      cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-      timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-      signal: context.requestOverrides?.signal as AbortSignal | undefined,
+      headers: context.requestOptions?.headers as Record<string, string> | undefined,
+      cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+      timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+      signal: context.requestOptions?.signal as AbortSignal | undefined,
     })
     if (!downloadUrlStatus.ok) {
       return null
     }
 
     const probe = await this.audioLinkTester.probe(downloadUrl, {
-      headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-      cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-      timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-      signal: context.requestOverrides?.signal as AbortSignal | undefined,
+      headers: context.requestOptions?.headers as Record<string, string> | undefined,
+      cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+      timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+      signal: context.requestOptions?.signal as AbortSignal | undefined,
     })
     if (!(probe.ext && probe.ext !== 'NULL')) {
       return null
@@ -368,10 +374,10 @@ export class MiguMusicSource extends BaseMusicSource {
       try {
         lyric = cleanLyric(
           await this.parseClient.text(lyricUrl, {
-            headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-            cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-            timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-            signal: context.requestOverrides?.signal as AbortSignal | undefined,
+            headers: context.requestOptions?.headers as Record<string, string> | undefined,
+            cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+            timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+            signal: context.requestOptions?.signal as AbortSignal | undefined,
           }),
         )
       }
@@ -405,7 +411,7 @@ export class MiguMusicSource extends BaseMusicSource {
     return link.split('/').pop() ?? ''
   }
 
-  private buildTrackFromXcvtsItem(payload: unknown): Track | null {
+  private buildTrackFromXcvtsItem(payload: unknown): TrackSummary | null {
     const data = payload as Record<string, unknown>
     const identifier = this.extractMiguIdentifier(String(data.link ?? '')) || sanitizeText(String(data.title ?? ''))
     if (!identifier) {

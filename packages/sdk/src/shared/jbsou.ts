@@ -1,4 +1,5 @@
-import type { SourceContext, Track } from '@jannchie/mdl-core'
+import type { TrackDetail, TrackLookup, TrackSummary } from '@jannchie/mdl-core'
+import type { SourceContext } from '@jannchie/mdl-core/internal'
 
 import type { AudioLinkTester } from './audio-link-tester.js'
 import type { HttpClient } from './http.js'
@@ -57,11 +58,46 @@ export async function searchJbsouSite(
   return Array.isArray(payload.data) ? payload.data : []
 }
 
+export function buildJbsouSearchKeywords(track: Pick<TrackLookup, 'songName' | 'singers'>): string[] {
+  const songName = track.songName?.trim() ?? ''
+  const singers = track.singers?.trim() ?? ''
+  const firstSinger = singers
+    .split(',')
+    .map(name => name.trim())
+    .find(Boolean) ?? ''
+
+  return [...new Set([
+    [songName, singers].filter(Boolean).join(' ').trim(),
+    [songName, firstSinger].filter(Boolean).join(' ').trim(),
+    songName,
+  ].filter(Boolean))]
+}
+
+export async function refreshJbsouSearchItem(options: {
+  site: string
+  identifier: string
+  track: Pick<TrackLookup, 'songName' | 'singers'>
+  headers: Record<string, string>
+  signal?: AbortSignal
+}): Promise<JbsouSearchItem | null> {
+  for (const keyword of buildJbsouSearchKeywords(options.track)) {
+    const items = await searchJbsouSite(options.site, keyword, options.headers, {
+      signal: options.signal,
+    })
+    const matched = items.find(item => String(item.songid ?? '') === options.identifier)
+    if (matched) {
+      return matched
+    }
+  }
+
+  return null
+}
+
 export function buildSearchTrackFromJbsouItem(options: {
   sourceName: string
   rootSource: string
   item: JbsouSearchItem
-}): Track | null {
+}): TrackSummary | null {
   const { sourceName, rootSource, item } = options
   const songId = String(item.songid ?? '')
   if (!songId) {
@@ -90,9 +126,9 @@ export async function resolveTrackFromJbsouItem(options: {
   context: SourceContext
   parseClient: HttpClient
   audioLinkTester: AudioLinkTester
-}): Promise<Track | null> {
+}): Promise<TrackDetail | null> {
   const { sourceName, rootSource, item, context, parseClient, audioLinkTester } = options
-  const signal = context.requestOverrides?.signal as AbortSignal | undefined
+  const signal = context.requestOptions?.signal as AbortSignal | undefined
   if (signal?.aborted) {
     return null
   }
@@ -104,30 +140,30 @@ export async function resolveTrackFromJbsouItem(options: {
 
   const redirectUrl = new URL(redirectPath, JBSOU_BASE_URL).toString()
   const resolvedUrl = await parseClient.resolveUrl(redirectUrl, {
-    headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-    cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-    timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-    signal: context.requestOverrides?.signal as AbortSignal | undefined,
+    headers: context.requestOptions?.headers as Record<string, string> | undefined,
+    cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+    timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+    signal: context.requestOptions?.signal as AbortSignal | undefined,
   })
   if (!resolvedUrl.startsWith('http')) {
     return null
   }
 
   const downloadUrlStatus = await audioLinkTester.test(resolvedUrl, {
-    headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-    cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-    timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-    signal: context.requestOverrides?.signal as AbortSignal | undefined,
+    headers: context.requestOptions?.headers as Record<string, string> | undefined,
+    cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+    timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+    signal: context.requestOptions?.signal as AbortSignal | undefined,
   })
   if (!downloadUrlStatus.ok) {
     return null
   }
 
   const probe = await audioLinkTester.probe(resolvedUrl, {
-    headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-    cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-    timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-    signal: context.requestOverrides?.signal as AbortSignal | undefined,
+    headers: context.requestOptions?.headers as Record<string, string> | undefined,
+    cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+    timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+    signal: context.requestOptions?.signal as AbortSignal | undefined,
   })
   if (!(probe.ext && probe.ext !== 'NULL')) {
     return null
@@ -142,10 +178,10 @@ export async function resolveTrackFromJbsouItem(options: {
     try {
       lyric = cleanLyric(
         await parseClient.text(new URL(lyricPath, JBSOU_BASE_URL).toString(), {
-          headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-          cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-          timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-          signal: context.requestOverrides?.signal as AbortSignal | undefined,
+          headers: context.requestOptions?.headers as Record<string, string> | undefined,
+          cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+          timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+          signal: context.requestOptions?.signal as AbortSignal | undefined,
         }),
       )
     }

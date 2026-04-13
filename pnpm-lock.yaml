@@ -35,6 +35,9 @@ importers:
       '@hono/zod-openapi':
         specifier: ^1.1.5
         version: 1.2.4(hono@4.12.12)(zod@4.3.6)
+      '@jannchie/mdl-core':
+        specifier: workspace:*
+        version: link:../core
       '@jannchie/mdl-sdk':
         specifier: workspace:*
         version: link:../sdk
@@ -50,6 +53,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@jannchie/mdl-core':
+        specifier: workspace:*
+        version: link:../core
       '@jannchie/mdl-sdk':
         specifier: workspace:*
         version: link:../sdk

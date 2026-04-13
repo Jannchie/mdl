@@ -1,52 +1,55 @@
-export type SourceScopedConfig = Record<string, Record<string, unknown>>
+export type SourceOptionsMap = Record<string, Record<string, unknown>>
 
-export interface Track {
+export interface TrackLookup {
   source: string
-  rootSource?: string
   identifier: string
-  songName: string
+  rootSource?: string
+  songName?: string
   singers?: string
   album?: string
+  durationS?: number
+  coverUrl?: string
+  downloadUrl?: string
+  rawData?: Record<string, unknown>
+}
+
+export interface TrackSummary extends TrackLookup {
+  songName: string
+  duration?: string
+}
+
+export interface TrackDetail extends TrackSummary {
   ext?: string
   fileSizeBytes?: number
   fileSize?: string
-  durationS?: number
-  duration?: string
   lyric?: string
-  coverUrl?: string
-  downloadUrl?: string
   protocol?: 'http' | 'hls'
   workDir?: string
   downloadHeaders?: Record<string, string>
-  rawData?: Record<string, unknown>
-  episodes?: Track[]
+  episodes?: TrackSummary[]
 }
 
 export interface SearchOptions {
-  keyword: string
   sources?: string[]
-  searchSizePerSource?: number
-  searchSizePerPage?: number
-  initSourceConfig?: SourceScopedConfig
-  requestOverrides?: SourceScopedConfig
-  searchRules?: SourceScopedConfig
+  limit?: number
+  pageSize?: number
+  sourceOptions?: SourceOptionsMap
+  requestOptions?: SourceOptionsMap
+  sourceSearchOptions?: SourceOptionsMap
 }
 
 export interface FetchDetailOptions {
-  track: Track
-  initSourceConfig?: SourceScopedConfig
-  requestOverrides?: SourceScopedConfig
+  sourceOptions?: SourceOptionsMap
+  requestOptions?: SourceOptionsMap
 }
 
 export interface DownloadOptions {
-  tracks: Track[]
   outputDir?: string
-  requestOverrides?: SourceScopedConfig
+  requestOptions?: SourceOptionsMap
 }
 
 export interface OpenTrackStreamOptions {
-  track: Track
-  requestOverrides?: SourceScopedConfig
+  requestOptions?: SourceOptionsMap
 }
 
 export interface OpenedTrackStream {
@@ -62,10 +65,9 @@ export interface OpenedTrackStream {
 }
 
 export interface ParsePlaylistOptions {
-  playlistUrl: string
   sources?: string[]
-  initSourceConfig?: SourceScopedConfig
-  requestOverrides?: SourceScopedConfig
+  sourceOptions?: SourceOptionsMap
+  requestOptions?: SourceOptionsMap
 }
 
 export interface DownloadedTrack {
@@ -79,19 +81,4 @@ export interface DownloadResult {
   requested: number
   completed: number
   items: DownloadedTrack[]
-}
-
-export interface SourceContext {
-  initConfig?: Record<string, unknown>
-  requestOverrides?: Record<string, unknown>
-  searchRule?: Record<string, unknown>
-}
-
-export interface MusicSource {
-  readonly name: string
-  search: (input: SearchOptions, context: SourceContext) => Promise<Track[]>
-  fetchDetail: (input: FetchDetailOptions, context: SourceContext) => Promise<Track>
-  download: (input: DownloadOptions, context: SourceContext) => Promise<DownloadResult>
-  openTrackStream: (input: OpenTrackStreamOptions, context: SourceContext) => Promise<OpenedTrackStream>
-  parsePlaylist?: (input: ParsePlaylistOptions, context: SourceContext) => Promise<Track[]>
 }

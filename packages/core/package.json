@@ -7,6 +7,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./internal": {
+      "types": "./src/internal.ts",
+      "default": "./dist/internal.js"
+    },
     "./dev": {
       "types": "./src/dev.ts",
       "default": "./src/dev.ts"

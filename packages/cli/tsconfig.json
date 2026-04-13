@@ -7,6 +7,6 @@
     "types": ["node"],
     "outDir": "dist"
   },
-  "references": [{ "path": "../sdk" }],
+  "references": [{ "path": "../core" }, { "path": "../sdk" }],
   "include": ["src/**/*.ts"]
 }

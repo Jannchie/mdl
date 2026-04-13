@@ -6,7 +6,11 @@ const qqMusicApi = require('qq-music-api') as {
 }
 
 interface QQSongDetailTrackInfo {
+  name?: string
   interval?: number
+  singer?: Array<{
+    name?: string
+  }>
   album?: {
     name?: string
   }

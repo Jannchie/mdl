@@ -1,4 +1,5 @@
-import type { SearchOptions, SourceContext, Track } from '@jannchie/mdl-core'
+import type { TrackDetail, TrackLookup, TrackSummary } from '@jannchie/mdl-core'
+import type { SearchRequest, SourceContext } from '@jannchie/mdl-core/internal'
 
 import { bytesToMb, cleanLyric, resolveRequestedSearchCount, resolveSearchPageSize, safeGet, sanitizeText, secondsToHms } from '../shared/utils.js'
 import { BaseMusicSource } from './base.js'
@@ -22,24 +23,12 @@ export class NeteaseMusicSource extends BaseMusicSource {
 
   private static readonly qualityLevels = ['lossless', 'exhigh', 'higher', 'standard']
 
-  protected buildSearchRequests(): Array<{ url: string }> {
-    return []
-  }
-
-  protected extractSearchItems(): unknown[] {
-    return []
-  }
-
-  protected async buildSearchTrack(_item: unknown, _context: SourceContext): Promise<Track | null> {
-    return null
-  }
-
-  override async search(input: SearchOptions, context: SourceContext): Promise<Track[]> {
+  override async search(input: SearchRequest, context: SourceContext): Promise<TrackSummary[]> {
     const pageSize = resolveSearchPageSize(input)
     const total = resolveRequestedSearchCount(input, pageSize)
-    const limit = input.searchSizePerSource
-    const results: Track[] = []
-    const signal = context.requestOverrides?.signal as AbortSignal | undefined
+    const limit = input.limit
+    const results: TrackSummary[] = []
+    const signal = context.requestOptions?.signal as AbortSignal | undefined
 
     for (let offset = 0; offset < total; offset += pageSize) {
       if (signal?.aborted) {
@@ -49,7 +38,7 @@ export class NeteaseMusicSource extends BaseMusicSource {
         method: 'POST',
         headers: {
           ...this.searchHeaders,
-          ...(context.requestOverrides?.headers as Record<string, string> | undefined),
+          ...(context.requestOptions?.headers as Record<string, string> | undefined),
         },
         body: new URLSearchParams({
           s: input.keyword,
@@ -82,15 +71,18 @@ export class NeteaseMusicSource extends BaseMusicSource {
     return results
   }
 
-  protected async resolveTrackDetail(track: Track, context: SourceContext): Promise<Track> {
-    if (track.downloadUrl) {
+  protected async resolveTrackDetail(track: TrackLookup, context: SourceContext): Promise<TrackDetail> {
+    if (this.isDetailedTrack(track)) {
       return track
     }
 
-    const searchResult = (track.rawData?.search as Record<string, unknown> | undefined) ?? {
+    const searchResult: Record<string, unknown> = (track.rawData?.search as Record<string, unknown> | undefined) ?? {
       id: track.identifier,
       name: track.songName,
-      ar: (track.singers ?? '').split(',').map(name => ({ name: name.trim() })).filter(item => item.name),
+      ar: (track.singers ?? '')
+        .split(',')
+        .map((name: string) => ({ name: name.trim() }))
+        .filter((item: { name: string }) => item.name),
       al: {
         name: track.album,
         picUrl: track.coverUrl,
@@ -103,7 +95,7 @@ export class NeteaseMusicSource extends BaseMusicSource {
     return detailed
   }
 
-  private buildTrackFromSearchItem(item: unknown): Track | null {
+  private buildTrackFromSearchItem(item: unknown): TrackSummary | null {
     const searchResult = item as Record<string, unknown>
     const songId = String(searchResult.id ?? '')
     if (!songId) {
@@ -129,8 +121,8 @@ export class NeteaseMusicSource extends BaseMusicSource {
     }
   }
 
-  private async resolveTrackFromSearchItem(item: Record<string, unknown>, context: SourceContext): Promise<Track | null> {
-    const signal = context.requestOverrides?.signal as AbortSignal | undefined
+  private async resolveTrackFromSearchItem(item: Record<string, unknown>, context: SourceContext): Promise<TrackDetail | null> {
+    const signal = context.requestOptions?.signal as AbortSignal | undefined
     if (signal?.aborted) {
       return null
     }
@@ -147,10 +139,10 @@ export class NeteaseMusicSource extends BaseMusicSource {
           miss: 'songDetail',
           id: songId,
         },
-        headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-        cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-        signal: context.requestOverrides?.signal as AbortSignal | undefined,
+        headers: context.requestOptions?.headers as Record<string, string> | undefined,
+        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+        signal: context.requestOptions?.signal as AbortSignal | undefined,
       })
     }
     catch {
@@ -164,10 +156,10 @@ export class NeteaseMusicSource extends BaseMusicSource {
           miss: 'lyric',
           id: songId,
         },
-        headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-        cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-        signal: context.requestOverrides?.signal as AbortSignal | undefined,
+        headers: context.requestOptions?.headers as Record<string, string> | undefined,
+        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+        signal: context.requestOptions?.signal as AbortSignal | undefined,
       })
       lyric = cleanLyric(String(safeGet(lyricPayload, ['data', 'lrc'], 'NULL')))
     }
@@ -185,10 +177,10 @@ export class NeteaseMusicSource extends BaseMusicSource {
           id: songId,
           level,
         },
-        headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-        cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-        signal: context.requestOverrides?.signal as AbortSignal | undefined,
+        headers: context.requestOptions?.headers as Record<string, string> | undefined,
+        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+        signal: context.requestOptions?.signal as AbortSignal | undefined,
       })
       const item = safeGet(payload, ['data', 0], {}) as Record<string, unknown>
       const downloadUrl = String(item.url ?? '')
@@ -197,20 +189,20 @@ export class NeteaseMusicSource extends BaseMusicSource {
       }
 
       const downloadUrlStatus = await this.audioLinkTester.test(downloadUrl, {
-        headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-        cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-        signal: context.requestOverrides?.signal as AbortSignal | undefined,
+        headers: context.requestOptions?.headers as Record<string, string> | undefined,
+        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+        signal: context.requestOptions?.signal as AbortSignal | undefined,
       })
       if (!downloadUrlStatus.ok) {
         continue
       }
 
       const probe = await this.audioLinkTester.probe(downloadUrl, {
-        headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-        cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-        signal: context.requestOverrides?.signal as AbortSignal | undefined,
+        headers: context.requestOptions?.headers as Record<string, string> | undefined,
+        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+        signal: context.requestOptions?.signal as AbortSignal | undefined,
       })
       if (!(probe.ext && probe.ext !== 'NULL')) {
         continue

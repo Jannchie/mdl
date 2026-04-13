@@ -26,6 +26,7 @@
     "access": "public"
   },
   "dependencies": {
+    "@jannchie/mdl-core": "workspace:*",
     "@jannchie/mdl-sdk": "workspace:*",
     "cac": "^6.7.14",
     "cli-table3": "^0.6.5"

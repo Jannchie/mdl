@@ -1,4 +1,5 @@
-import type { SearchOptions, SourceContext, Track } from '@jannchie/mdl-core'
+import type { TrackDetail, TrackLookup, TrackSummary } from '@jannchie/mdl-core'
+import type { SearchRequest, SourceContext } from '@jannchie/mdl-core/internal'
 
 import { describe, expect, it } from 'vitest'
 import { BaseMusicSource } from '../src/sources/base.js'
@@ -17,7 +18,7 @@ class TestMusicSource extends BaseMusicSource {
     } as never
   }
 
-  protected buildSearchRequests(_input: SearchOptions, _context: SourceContext) {
+  protected buildSearchRequests(_input: SearchRequest, _context: SourceContext) {
     return [{ url: 'https://example.com/search' }]
   }
 
@@ -25,7 +26,7 @@ class TestMusicSource extends BaseMusicSource {
     return (payload as { items?: unknown[] }).items ?? []
   }
 
-  protected async buildSearchTrack(item: unknown): Promise<Track | null> {
+  protected async buildSearchTrack(item: unknown): Promise<TrackSummary | null> {
     const identifier = String((item as { id?: string }).id ?? '')
     return identifier
       ? {
@@ -36,9 +37,10 @@ class TestMusicSource extends BaseMusicSource {
       : null
   }
 
-  protected async resolveTrackDetail(track: Track): Promise<Track> {
+  protected async resolveTrackDetail(track: TrackLookup): Promise<TrackDetail> {
     return {
       ...track,
+      songName: track.songName ?? track.identifier,
       downloadUrl: `https://example.com/${track.identifier}.mp3`,
     }
   }
@@ -56,7 +58,7 @@ describe('basemusicsource search defaults', () => {
   it('still respects an explicit per-source limit', async () => {
     const source = new TestMusicSource()
 
-    const result = await source.search({ keyword: 'demo', searchSizePerSource: 2 }, {})
+    const result = await source.search({ keyword: 'demo', limit: 2 }, {})
 
     expect(result.map(item => item.identifier)).toEqual(['1', '2'])
   })

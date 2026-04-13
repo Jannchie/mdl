@@ -20,12 +20,13 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "dev": "tsx src/dev.ts",
+    "dev": "tsx watch src/dev.ts",
     "typecheck": "tsc -p tsconfig.json --pretty false"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.6",
     "@hono/zod-openapi": "^1.1.5",
+    "@jannchie/mdl-core": "workspace:*",
     "@jannchie/mdl-sdk": "workspace:*",
     "@scalar/hono-api-reference": "^0.9.4",
     "hono": "^4.10.1",

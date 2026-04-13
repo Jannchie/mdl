@@ -1,4 +1,5 @@
-import type { ParsePlaylistOptions, SearchOptions, SourceContext, Track } from '@jannchie/mdl-core'
+import type { TrackDetail, TrackLookup, TrackSummary } from '@jannchie/mdl-core'
+import type { ParsePlaylistRequest, SearchRequest, SourceContext } from '@jannchie/mdl-core/internal'
 
 import { createHash } from 'node:crypto'
 
@@ -21,10 +22,10 @@ export class JamendoMusicSource extends BaseMusicSource {
     'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
   }
 
-  protected buildSearchRequests(input: SearchOptions, context: SourceContext) {
+  protected buildSearchRequests(input: SearchRequest, context: SourceContext) {
     const pageSize = resolveSearchPageSize(input)
     const total = resolveRequestedSearchCount(input, pageSize)
-    const searchRule = context.searchRule ?? {}
+    const searchRule = context.sourceSearchOptions ?? {}
     const requests = []
     for (let count = 0; count < total; count += pageSize) {
       requests.push({
@@ -46,16 +47,16 @@ export class JamendoMusicSource extends BaseMusicSource {
     return Array.isArray(payload) ? payload : []
   }
 
-  override async search(input: SearchOptions, context: SourceContext): Promise<Track[]> {
-    const limit = input.searchSizePerSource
-    const results: Track[] = []
+  override async search(input: SearchRequest, context: SourceContext): Promise<TrackSummary[]> {
+    const limit = input.limit
+    const results: TrackSummary[] = []
     for (const request of this.buildSearchRequests(input, context)) {
       const payload = await this.searchClient.json<unknown>(request.url, {
         query: request.query,
         headers: this.makeJamHeaders('/api/search', context),
-        cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-        signal: context.requestOverrides?.signal as AbortSignal | undefined,
+        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+        signal: context.requestOptions?.signal as AbortSignal | undefined,
       })
       for (const item of this.extractSearchItems(payload)) {
         const track = await this.buildSearchTrack(item, context)
@@ -71,7 +72,7 @@ export class JamendoMusicSource extends BaseMusicSource {
     return uniqueByIdentifier(results)
   }
 
-  protected async buildSearchTrack(item: unknown, _context: SourceContext): Promise<Track | null> {
+  protected async buildSearchTrack(item: unknown, _context: SourceContext): Promise<TrackSummary | null> {
     const searchResult = item as Record<string, unknown>
     const songId = String(searchResult.id ?? '')
     if (!songId) {
@@ -92,8 +93,8 @@ export class JamendoMusicSource extends BaseMusicSource {
     }
   }
 
-  protected async resolveTrackDetail(track: Track, context: SourceContext): Promise<Track> {
-    if (track.downloadUrl) {
+  protected async resolveTrackDetail(track: TrackLookup, context: SourceContext): Promise<TrackDetail> {
+    if (this.isDetailedTrack(track)) {
       return track
     }
 
@@ -104,7 +105,7 @@ export class JamendoMusicSource extends BaseMusicSource {
       artist: { name: track.singers },
       album: { name: track.album },
     }
-    const signal = context.requestOverrides?.signal as AbortSignal | undefined
+    const signal = context.requestOptions?.signal as AbortSignal | undefined
     if (signal?.aborted) {
       throw new Error('aborted')
     }
@@ -116,9 +117,9 @@ export class JamendoMusicSource extends BaseMusicSource {
     const downloadResult = await this.parseClient.json<unknown>('https://www.jamendo.com/api/tracks', {
       query: { 'id[]': songId },
       headers: this.makeJamHeaders('/api/tracks', context),
-      cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-      timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-      signal: context.requestOverrides?.signal as AbortSignal | undefined,
+      cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+      timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+      signal: context.requestOptions?.signal as AbortSignal | undefined,
     })
     const trackPayload = Array.isArray(downloadResult) ? downloadResult[0] : null
     if (!trackPayload || typeof trackPayload !== 'object') {
@@ -157,19 +158,19 @@ export class JamendoMusicSource extends BaseMusicSource {
         throw new Error('aborted')
       }
       const downloadUrlStatus = await this.audioLinkTester.test(downloadUrl, {
-        headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-        cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-        signal: context.requestOverrides?.signal as AbortSignal | undefined,
+        headers: context.requestOptions?.headers as Record<string, string> | undefined,
+        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+        signal: context.requestOptions?.signal as AbortSignal | undefined,
       })
       if (!downloadUrlStatus.ok) {
         continue
       }
       const probe = await this.audioLinkTester.probe(downloadUrl, {
-        headers: context.requestOverrides?.headers as Record<string, string> | undefined,
-        cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-        signal: context.requestOverrides?.signal as AbortSignal | undefined,
+        headers: context.requestOptions?.headers as Record<string, string> | undefined,
+        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+        signal: context.requestOptions?.signal as AbortSignal | undefined,
       })
       const ext = this.inferExt(downloadUrl, probe.ext)
       if (!ext) {
@@ -199,8 +200,8 @@ export class JamendoMusicSource extends BaseMusicSource {
     throw new Error(`Failed to fetch detail for ${track.identifier} from ${this.name}`)
   }
 
-  override async parsePlaylist(input: ParsePlaylistOptions, context: SourceContext): Promise<Track[]> {
-    const signal = context.requestOverrides?.signal as AbortSignal | undefined
+  override async parsePlaylist(input: ParsePlaylistRequest, context: SourceContext): Promise<TrackSummary[]> {
+    const signal = context.requestOptions?.signal as AbortSignal | undefined
     if (signal?.aborted) {
       return []
     }
@@ -215,23 +216,23 @@ export class JamendoMusicSource extends BaseMusicSource {
     const payload = await this.parseClient.json<unknown>('https://www.jamendo.com/api/playlists', {
       query: { 'id[]': playlistId },
       headers: this.makeJamHeaders('/api/playlists', context),
-      cookies: context.requestOverrides?.cookies as Record<string, unknown> | string | undefined,
-      timeoutMs: context.requestOverrides?.timeoutMs as number | undefined,
-      signal: context.requestOverrides?.signal as AbortSignal | undefined,
+      cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
+      timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
+      signal: context.requestOptions?.signal as AbortSignal | undefined,
     })
     const playlist = Array.isArray(payload) ? payload[0] : null
     const tracks = Array.isArray((playlist as Record<string, unknown> | null)?.tracks)
       ? ((playlist as Record<string, unknown>).tracks as unknown[])
       : []
     const parsed = await Promise.all(tracks.map(track => this.buildSearchTrack(track, context)))
-    return uniqueByIdentifier(parsed.filter((track): track is Track => track !== null))
+    return uniqueByIdentifier(parsed.filter((track): track is TrackSummary => track !== null))
   }
 
   private makeJamHeaders(path: string, context: SourceContext): Record<string, string> {
     const random = String(Math.random())
     return {
       ...this.searchHeaders,
-      ...(context.requestOverrides?.headers as Record<string, string> | undefined),
+      ...(context.requestOptions?.headers as Record<string, string> | undefined),
       'x-jam-call': `$${createHash('sha1').update(path + random).digest('hex')}*${random}~`,
     }
   }
