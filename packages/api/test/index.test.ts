@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import packageJson from '../package.json' with { type: 'json' }
-import { createServer as createAppServer } from '../src/app.js'
-import { apiVersion, createServer } from '../src/index.js'
+import { apiVersion, createServer as createAppServer } from '../src/app.js'
+import { createServer } from '../src/index.js'
 import { resolveRuntimeOptions } from '../src/runtime.js'
 
 describe('api server', () => {
@@ -49,7 +49,7 @@ describe('api server', () => {
       openTrackStream: async () => {
         throw new Error('not implemented')
       },
-    } as never, packageJson.version)
+    } as never)
 
     const response = await app.request('/fetch-detail', {
       method: 'POST',
@@ -94,7 +94,7 @@ describe('api server', () => {
       openTrackStream: async () => {
         throw new Error('not implemented')
       },
-    } as never, packageJson.version)
+    } as never)
 
     const response = await app.request('/search', {
       method: 'POST',
@@ -140,7 +140,7 @@ describe('api server', () => {
       openTrackStream: async () => {
         throw new Error('not implemented')
       },
-    } as never, packageJson.version)
+    } as never)
 
     const response = await app.request('/fetch-detail', {
       method: 'POST',
@@ -177,7 +177,7 @@ describe('api server', () => {
       openTrackStream: async () => {
         throw new Error('not implemented')
       },
-    } as never, packageJson.version)
+    } as never)
 
     const response = await app.request('/parse-playlist', {
       method: 'POST',
@@ -223,7 +223,7 @@ describe('api server', () => {
       openTrackStream: async () => {
         throw new Error('not implemented')
       },
-    } as never, packageJson.version)
+    } as never)
 
     const response = await app.request('/download', {
       method: 'POST',

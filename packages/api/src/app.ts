@@ -3,6 +3,7 @@ import type { MusicService } from '@jannchie/mdl-core'
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 
 import { Scalar } from '@scalar/hono-api-reference'
+import packageJson from '../package.json' with { type: 'json' }
 import {
   downloadResultSchema,
   exampleTrackDetail,
@@ -12,6 +13,8 @@ import {
   trackLookupSchema,
   trackSummarySchema,
 } from './schemas.js'
+
+export const apiVersion = packageJson.version
 
 const healthResponseSchema = z.object({
   ok: z.boolean().openapi({ example: true }),
@@ -276,7 +279,7 @@ const downloadRoute = createRoute({
   },
 })
 
-export function createServer(client: MusicService, version: string) {
+export function createServer(client: MusicService) {
   const app = new OpenAPIHono()
   const apiTitle = 'MDL API'
 
@@ -284,7 +287,7 @@ export function createServer(client: MusicService, version: string) {
     openapi: '3.1.0',
     info: {
       title: apiTitle,
-      version,
+      version: apiVersion,
       description: 'HTTP API for music search, playlist parsing, and server-side downloads.',
     },
   })
@@ -305,7 +308,7 @@ export function createServer(client: MusicService, version: string) {
 
     return c.json({
       name: apiTitle,
-      version,
+      version: apiVersion,
       docs: {
         openapi: openapiUrl.href,
         scalar: scalarUrl.href,
