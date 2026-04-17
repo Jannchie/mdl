@@ -1,5 +1,19 @@
 export type SourceOptionsMap = Record<string, Record<string, unknown>>
 
+export interface SourceCapabilities {
+  search: boolean
+  playlist: boolean
+  stream: boolean
+  download: boolean
+}
+
+export const DEFAULT_SOURCE_CAPABILITIES: SourceCapabilities = {
+  search: true,
+  playlist: true,
+  stream: true,
+  download: true,
+}
+
 export interface TrackLookup {
   source: string
   identifier: string

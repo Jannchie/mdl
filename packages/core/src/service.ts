@@ -15,10 +15,13 @@ import type {
   OpenTrackStreamOptions,
   ParsePlaylistOptions,
   SearchOptions,
+  SourceCapabilities,
   TrackDetail,
   TrackLookup,
   TrackSummary,
 } from './types.js'
+
+import { DEFAULT_SOURCE_CAPABILITIES } from './types.js'
 
 export class MusicService {
   private readonly sources = new Map<string, MusicSource>()
@@ -31,6 +34,22 @@ export class MusicService {
 
   listSources(): string[] {
     return [...this.sources.keys()].sort()
+  }
+
+  getCapabilities(name: string): SourceCapabilities {
+    const source = this.sources.get(name)
+    if (!source) {
+      throw new Error(`Unknown source: ${name}`)
+    }
+    return source.capabilities ?? DEFAULT_SOURCE_CAPABILITIES
+  }
+
+  listCapabilities(): Record<string, SourceCapabilities> {
+    const result: Record<string, SourceCapabilities> = {}
+    for (const [name, source] of this.sources) {
+      result[name] = source.capabilities ?? DEFAULT_SOURCE_CAPABILITIES
+    }
+    return result
   }
 
   async search(keyword: string, options: SearchOptions = {}): Promise<Record<string, TrackSummary[]>> {

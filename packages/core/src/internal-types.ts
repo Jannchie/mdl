@@ -6,6 +6,7 @@ import type {
   OpenTrackStreamOptions,
   ParsePlaylistOptions,
   SearchOptions,
+  SourceCapabilities,
   TrackDetail,
   TrackLookup,
   TrackSummary,
@@ -39,6 +40,7 @@ export interface SourceContext {
 
 export interface MusicSource {
   readonly name: string
+  readonly capabilities?: SourceCapabilities
   search: (input: SearchRequest, context: SourceContext) => Promise<TrackSummary[]>
   fetchDetail: (input: FetchDetailRequest, context: SourceContext) => Promise<TrackDetail>
   download: (input: DownloadRequest, context: SourceContext) => Promise<DownloadResult>

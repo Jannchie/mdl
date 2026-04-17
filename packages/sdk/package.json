@@ -25,6 +25,7 @@
     "@jannchie/mdl-core": "workspace:*",
     "migu-music-api": "^1.0.1",
     "netease-cloud-music-api": "^0.1.8",
-    "qq-music-api": "^1.1.2"
+    "qq-music-api": "^1.1.2",
+    "ytdlp-nodejs": "^3.4.4"
   }
 }

@@ -1,12 +1,14 @@
 import { MusicService } from '@jannchie/mdl-core'
 
 import {
+  BilibiliMusicSource,
   JamendoMusicSource,
   KugouMusicSource,
   KuwoMusicSource,
   MiguMusicSource,
   NeteaseMusicSource,
   QQMusicSource,
+  YoutubeMusicSource,
 } from './sources/index.js'
 
 export function createClient(): MusicService {
@@ -17,5 +19,7 @@ export function createClient(): MusicService {
     new KuwoMusicSource(),
     new KugouMusicSource(),
     new JamendoMusicSource(),
+    new YoutubeMusicSource(),
+    new BilibiliMusicSource(),
   ])
 }

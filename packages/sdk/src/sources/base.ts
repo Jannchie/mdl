@@ -1,4 +1,4 @@
-import type { DownloadResult, OpenedTrackStream, TrackDetail, TrackLookup, TrackSummary } from '@jannchie/mdl-core'
+import type { DownloadResult, OpenedTrackStream, SourceCapabilities, TrackDetail, TrackLookup, TrackSummary } from '@jannchie/mdl-core'
 import type {
   DownloadRequest,
   FetchDetailRequest,
@@ -11,6 +11,8 @@ import { writeFile } from 'node:fs/promises'
 
 import path from 'node:path'
 
+import { DEFAULT_SOURCE_CAPABILITIES } from '@jannchie/mdl-core'
+
 import { AudioLinkTester } from '../shared/audio-link-tester.js'
 import { HttpClient } from '../shared/http.js'
 import { buildTrackOutputPath, cleanLyric, ensureDir, uniqueByIdentifier } from '../shared/utils.js'
@@ -22,6 +24,7 @@ interface SearchEndpointRequest {
 
 export abstract class BaseMusicSource {
   abstract readonly name: string
+  readonly capabilities: SourceCapabilities = DEFAULT_SOURCE_CAPABILITIES
   protected abstract readonly searchHeaders: Record<string, string>
   protected abstract readonly parseHeaders: Record<string, string>
   protected abstract readonly downloadHeaders: Record<string, string>
