@@ -1,3 +1,12 @@
+## v0.4.0
+
+[v0.3.0...v0.4.0](https://github.com/Jannchie/mdl/compare/v0.3.0...v0.4.0)
+
+### :sparkles: Features
+
+- **sources**: add youtube and bilibili sources via yt-dlp - By [Jannchie](mailto:jannchie@gmail.com) in [d18d52b](https://github.com/Jannchie/mdl/commit/d18d52b)
+- **ytdlp**: add thumbnail picker && extend ytdlp metadata - By [Jannchie](mailto:jannchie@gmail.com) in [cd1ad8f](https://github.com/Jannchie/mdl/commit/cd1ad8f)
+
 ## v0.3.0
 
 [v0.2.0...v0.3.0](https://github.com/Jannchie/mdl/compare/v0.2.0...v0.3.0)
