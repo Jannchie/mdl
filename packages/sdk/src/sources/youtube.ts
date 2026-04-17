@@ -2,6 +2,7 @@ import type { TrackDetail } from '@jannchie/mdl-core'
 
 import type { YtDlpMetadata } from '../shared/ytdlp.js'
 
+import { pickBestThumbnail } from '../shared/ytdlp.js'
 import { YtDlpMusicSource } from './ytdlp-base.js'
 
 export class YoutubeMusicSource extends YtDlpMusicSource {
@@ -14,9 +15,10 @@ export class YoutubeMusicSource extends YtDlpMusicSource {
   protected mapMetadata(raw: YtDlpMetadata, fallbackId: string): Partial<TrackDetail> & Pick<TrackDetail, 'identifier' | 'songName' | 'singers'> {
     return {
       identifier: raw.id ?? fallbackId,
-      songName: raw.title ?? 'Unknown',
-      singers: raw.uploader ?? 'Unknown',
-      coverUrl: raw.thumbnail,
+      songName: raw.track ?? raw.title ?? 'Unknown',
+      singers: raw.artist ?? raw.uploader ?? 'Unknown',
+      album: raw.album,
+      coverUrl: pickBestThumbnail(raw),
       durationS: raw.duration,
     }
   }

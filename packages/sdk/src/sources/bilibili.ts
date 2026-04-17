@@ -2,6 +2,7 @@ import type { TrackDetail } from '@jannchie/mdl-core'
 
 import type { YtDlpMetadata } from '../shared/ytdlp.js'
 
+import { pickBestThumbnail } from '../shared/ytdlp.js'
 import { YtDlpMusicSource } from './ytdlp-base.js'
 
 export class BilibiliMusicSource extends YtDlpMusicSource {
@@ -19,7 +20,7 @@ export class BilibiliMusicSource extends YtDlpMusicSource {
       songName: info.title ?? 'Unknown',
       singers: raw.uploader ?? entry?.uploader ?? 'Unknown',
       album: entry?.description ?? raw.description,
-      coverUrl: info.thumbnail,
+      coverUrl: pickBestThumbnail(info),
       durationS: info.duration,
     }
   }

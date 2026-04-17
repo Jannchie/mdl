@@ -14,15 +14,45 @@ export interface YtDlpFormat {
   acodec?: string
 }
 
+export interface YtDlpThumbnail {
+  url?: string
+  width?: number
+  height?: number
+  preference?: number
+  id?: string
+}
+
 export interface YtDlpMetadata {
   id?: string
   title?: string
   thumbnail?: string
+  thumbnails?: YtDlpThumbnail[]
   uploader?: string
   description?: string
   duration?: number
+  artist?: string
+  track?: string
+  album?: string
+  release_year?: number
   formats?: YtDlpFormat[]
   entries?: YtDlpMetadata[]
+}
+
+export function pickBestThumbnail(raw: Pick<YtDlpMetadata, 'thumbnails' | 'thumbnail'>): string | undefined {
+  const candidates = raw.thumbnails?.filter(t => typeof t.url === 'string') ?? []
+  let best: YtDlpThumbnail | undefined
+  let bestArea = -1
+  let bestPreference = Number.NEGATIVE_INFINITY
+  for (const t of candidates) {
+    const area = (t.width ?? 0) * (t.height ?? 0)
+    const preference = t.preference ?? 0
+    if (area > bestArea || (area === bestArea && preference > bestPreference)) {
+      best = t
+      bestArea = area
+      bestPreference = preference
+    }
+  }
+  return best?.url ?? raw.thumbnail
 }
 
 const INSTALL_HINT
