@@ -1,3 +1,15 @@
+## v0.5.0
+
+[v0.4.0...v0.5.0](https://github.com/Jannchie/mdl/compare/v0.4.0...v0.5.0)
+
+### :bug: Bug Fixes
+
+- **sources**: replace dead resolvers for netease, qq, kuwo and migu - By [Jannchie](mailto:jannchie@gmail.com) in [d5b59b5](https://github.com/Jannchie/mdl/commit/d5b59b5)
+
+### :wrench: Chores
+
+- **ci**: publish to npm via trusted publishing on version tags - By [Jannchie](mailto:jannchie@gmail.com) in [a88b2bf](https://github.com/Jannchie/mdl/commit/a88b2bf)
+
 ## v0.4.0
 
 [v0.3.0...v0.4.0](https://github.com/Jannchie/mdl/compare/v0.3.0...v0.4.0)
