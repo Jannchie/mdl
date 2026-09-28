@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  # Required for npm trusted publishing (OIDC) and provenance.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm >= 11.5.1.
+      - run: npm install -g npm@latest
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Check tag matches package versions
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          for pkg in core sdk cli; do
+            version=$(node -p "require('./packages/$pkg/package.json').version")
+            if [ "$version" != "$tag" ]; then
+              echo "packages/$pkg is $version, tag is $GITHUB_REF_NAME" >&2
+              exit 1
+            fi
+          done
+
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+      # pnpm pack rewrites workspace:* ranges; npm publish then authenticates through OIDC.
+      - name: Publish to npm
+        run: |
+          for pkg in core sdk cli; do
+            name=$(node -p "require('./packages/$pkg/package.json').name")
+            version=$(node -p "require('./packages/$pkg/package.json').version")
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "$name@$version already published, skipping"
+              continue
+            fi
+            tarball=$(cd "packages/$pkg" && pnpm pack --pack-destination "$RUNNER_TEMP" | tail -n 1)
+            npm publish "$tarball" --access public
+          done
+
+      - name: Create GitHub release
+        run: gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag
+        env:
+          GH_TOKEN: ${{ github.token }}
