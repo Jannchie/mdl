@@ -18,6 +18,7 @@ export interface RequestOptions extends RequestOverrides {
   method?: 'GET' | 'POST' | 'HEAD'
   query?: Record<string, string | number | boolean>
   json?: unknown
+  form?: Record<string, string>
 }
 
 export interface AudioProbe {
@@ -114,13 +115,19 @@ export class HttpClient {
     if (options.json !== undefined) {
       headers.set('content-type', 'application/json')
     }
+    else if (options.form !== undefined) {
+      headers.set('content-type', 'application/x-www-form-urlencoded')
+    }
     const finalUrl = this.withQuery(url, options.query)
+    const body = options.json === undefined
+      ? options.form === undefined ? null : new URLSearchParams(options.form)
+      : JSON.stringify(options.json)
     try {
       const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal
       return await fetch(finalUrl, {
-        method: options.method ?? (options.json === undefined ? 'GET' : 'POST'),
+        method: options.method ?? (body === null ? 'GET' : 'POST'),
         headers,
-        body: options.json === undefined ? null : JSON.stringify(options.json),
+        body,
         redirect: 'follow',
         signal,
       })

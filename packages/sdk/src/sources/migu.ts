@@ -5,37 +5,39 @@ import { bytesToMb, cleanLyric, hostMatches, resolveRequestedSearchCount, resolv
 import { BaseMusicSource } from './base.js'
 
 const MIGU_HOSTS = ['music.migu.cn', 'y.migu.cn']
+const MIGU_MAGIC = [0xAB, 0xCD, 0x01]
+const MIGU_KEY = new TextEncoder().encode('Jk8qzuePiJ1qE3mDYhLQ3T73DtDoAhLP')
+
+/**
+ * The h5 listen-url endpoint answers with an obfuscated body: 3 magic bytes, a seed byte, then bytes shifted by a repeating key.
+ */
+export function decryptMiguPayload(raw: Uint8Array, signature: string | null): unknown {
+  const encrypted = signature === '1' || MIGU_MAGIC.every((byte, index) => raw[index] === byte)
+  if (!encrypted) {
+    return JSON.parse(new TextDecoder().decode(raw))
+  }
+  const seed = raw[3] ?? 0
+  const plain = raw.subarray(4).map((byte, index) => (byte + seed - (MIGU_KEY[index % MIGU_KEY.length] ?? 0)) & 0xFF)
+  return JSON.parse(new TextDecoder().decode(plain))
+}
 
 export class MiguMusicSource extends BaseMusicSource {
   readonly name = 'MiguMusicClient'
   protected readonly searchHeaders = {
     'accept': 'application/json, text/plain, */*',
-    'accept-language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
-    'appid': 'ce',
-    'channel': '014X031',
-    'referer': 'https://y.migu.cn/app/v4/zt/2022/music/index.html',
-    'origin': 'https://y.migu.cn',
-    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
+    'origin': 'https://h5.nf.migu.cn',
+    'referer': 'https://h5.nf.migu.cn/',
+    'ua': 'Android_migu',
+    'version': '6.8.8',
+    'channel': '014021I',
+    'subchannel': '014021I',
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36',
   }
 
   protected readonly parseHeaders = this.searchHeaders
   protected readonly downloadHeaders = {
-    'accept': '*/*',
-    'range': 'bytes=0-',
-    'referer': 'https://y.migu.cn/app/v4/zt/2022/music/index.html',
-    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36',
   }
-
-  private static readonly qualityExt = new Map<string, string>([
-    ['LQ', 'mp3'],
-    ['PQ', 'mp3'],
-    ['HQ', 'mp3'],
-    ['SQ', 'flac'],
-    ['ZQ', 'flac'],
-    ['Z3D', 'flac'],
-    ['ZQ24', 'flac'],
-    ['ZQ32', 'flac'],
-  ])
 
   protected buildSearchRequests(input: SearchRequest, context: SourceContext) {
     const pageSize = resolveSearchPageSize(input)
@@ -68,30 +70,6 @@ export class MiguMusicSource extends BaseMusicSource {
 
   protected extractSearchItems(payload: unknown): unknown[] {
     return safeGet(payload, ['songResultData', 'result'], [])
-  }
-
-  override async search(input: SearchRequest, context: SourceContext): Promise<TrackSummary[]> {
-    const requestCount = resolveRequestedSearchCount(input)
-    const results: TrackSummary[] = []
-    for (let index = 1; index <= requestCount; index += 1) {
-      const payload = await this.searchClient.json<unknown>('https://api.xcvts.cn/api/music/migu', {
-        query: {
-          gm: input.keyword,
-          n: index,
-          num: Math.max(requestCount, resolveSearchPageSize(input, requestCount)),
-          type: 'json',
-        },
-        headers: context.requestOptions?.headers as Record<string, string> | undefined,
-        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
-        signal: context.requestOptions?.signal as AbortSignal | undefined,
-      })
-      const track = this.buildTrackFromXcvtsItem(payload)
-      if (track) {
-        results.push(track)
-      }
-    }
-    return uniqueByIdentifier(results)
   }
 
   protected async buildSearchTrack(item: unknown, _context: SourceContext): Promise<TrackSummary | null> {
@@ -134,14 +112,6 @@ export class MiguMusicSource extends BaseMusicSource {
     }
 
     const searchResult = track.rawData?.search as Record<string, unknown> | undefined
-    if (searchResult && ('music_url' in searchResult || 'lrc_url' in searchResult || 'link' in searchResult)) {
-      const detailed = await this.parseXcvtsItem(searchResult, context)
-      if (!detailed) {
-        throw new Error(`Failed to fetch detail for ${track.identifier} from ${this.name}`)
-      }
-      return detailed
-    }
-
     const fallbackSearchResult: Record<string, unknown> = {
       contentId: track.identifier,
       name: track.songName,
@@ -163,15 +133,18 @@ export class MiguMusicSource extends BaseMusicSource {
   private async resolveTrackFromSearchItem(item: unknown, context: SourceContext): Promise<TrackDetail | null> {
     const searchResult = item as Record<string, unknown>
     const contentId = String(searchResult.contentId ?? '')
-    if (!contentId) {
+    const copyrightId = String(searchResult.copyrightId ?? '')
+    if (!contentId || !copyrightId) {
       return null
     }
 
-    const rateFormats = [
+    const allFormats = [
       ...(safeGet(searchResult, ['rateFormats'], []) as Array<Record<string, unknown>>),
       ...(safeGet(searchResult, ['newRateFormats'], []) as Array<Record<string, unknown>>),
       ...(safeGet(searchResult, ['audioFormats'], []) as Array<Record<string, unknown>>),
     ]
+    // The three lists overlap; Z3D is an encrypted format.
+    const rateFormats = [...new Map(allFormats.map(item => [item.formatType, item])).values()]
       .filter(item => item.formatType !== 'Z3D')
       .sort((left, right) => this.parseRateSize(right) - this.parseRateSize(left))
 
@@ -182,42 +155,31 @@ export class MiguMusicSource extends BaseMusicSource {
         continue
       }
 
-      const payload = await this.parseClient.json<unknown>('https://c.musicapp.migu.cn/MIGUM3.0/strategy/listen-url/v2.4', {
-        query: {
+      let payload: unknown = {}
+      try {
+        payload = await this.fetchListenUrl({
+          contentId,
+          copyrightId,
           resourceType,
           netType: '01',
-          scene: '',
           toneFlag: formatType,
-          contentId,
-          copyrightId: contentId,
+          scene: '',
           lowerQualityContentId: contentId,
-        },
-        headers: context.requestOptions?.headers as Record<string, string> | undefined,
-        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
-      })
+        }, context)
+      }
+      catch {
+        continue
+      }
 
       let downloadUrl = safeGet(payload, ['data', 'url'], '')
       if (!downloadUrl || typeof downloadUrl !== 'string' || !downloadUrl.startsWith('http')) {
-        downloadUrl = `https://app.pd.nf.migu.cn/MIGUM3.0/v1.0/content/sub/listenSong.do?channel=mx&copyrightId=${contentId}&contentId=${contentId}&toneFlag=${formatType}&resourceType=${resourceType}&userId=15548614588710179085069&netType=00`
+        downloadUrl = `https://app.pd.nf.migu.cn/MIGUM3.0/v1.0/content/sub/listenSong.do?channel=mx&copyrightId=${copyrightId}&contentId=${contentId}&toneFlag=${formatType}&resourceType=${resourceType}&userId=15548614588710179085069&netType=00`
       }
 
       downloadUrl = downloadUrl.replace('/MP3_128_16_Stero/', '/MP3_320_16_Stero/')
-      const downloadUrlStatus = await this.audioLinkTester.test(downloadUrl, {
-        headers: context.requestOptions?.headers as Record<string, string> | undefined,
-        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
-        signal: context.requestOptions?.signal as AbortSignal | undefined,
-      })
-      if (!downloadUrlStatus.ok) {
-        continue
-      }
-      const probe = await this.audioLinkTester.probe(downloadUrl, {
-        headers: context.requestOptions?.headers as Record<string, string> | undefined,
-        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
-        signal: context.requestOptions?.signal as AbortSignal | undefined,
-      })
-      if (!(probe.ext && probe.ext !== 'NULL')) {
+      const durationS = Number(safeGet(payload, ['data', 'song', 'duration'], 0))
+      const probe = await this.probeDownloadUrl(downloadUrl, context, durationS)
+      if (!probe) {
         continue
       }
 
@@ -225,12 +187,7 @@ export class MiguMusicSource extends BaseMusicSource {
       const lyricUrl = String(searchResult.lyricUrl ?? '')
       if (lyricUrl.startsWith('http')) {
         try {
-          lyric = cleanLyric(await this.parseClient.text(lyricUrl, {
-            headers: context.requestOptions?.headers as Record<string, string> | undefined,
-            cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
-            timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
-            signal: context.requestOptions?.signal as AbortSignal | undefined,
-          }))
+          lyric = cleanLyric(await this.parseClient.text(lyricUrl, this.resolverOverrides(context)))
         }
         catch {
           lyric = 'NULL'
@@ -257,11 +214,11 @@ export class MiguMusicSource extends BaseMusicSource {
                 .join(', '),
           ),
         ),
-        ext: probe.ext ?? MiguMusicSource.qualityExt.get(formatType) ?? 'mp3',
+        ext: probe.ext,
         fileSizeBytes: this.parseRateSize(rate),
         fileSize: probe.fileSize === 'NULL' ? bytesToMb(this.parseRateSize(rate)) : probe.fileSize,
-        durationS: Number(safeGet(payload, ['data', 'song', 'duration'], 0)),
-        duration: secondsToHms(Number(safeGet(payload, ['data', 'song', 'duration'], 0))),
+        durationS,
+        duration: secondsToHms(durationS),
         lyric,
         coverUrl: this.resolveCoverUrl(searchResult),
         downloadUrl,
@@ -321,6 +278,25 @@ export class MiguMusicSource extends BaseMusicSource {
     return uniqueByIdentifier(parsed.filter((track): track is TrackSummary => track !== null))
   }
 
+  private async fetchListenUrl(query: Record<string, string>, context: SourceContext): Promise<unknown> {
+    const overrides = this.resolverOverrides(context)
+    const target = `https://c.musicapp.migu.cn/strategy/listen-url/h5/v2.4?${new URLSearchParams(query)}`
+    // Read raw bytes: the body is obfuscated and the `signature` header says how.
+    const response = await this.parseClient.openStream(target, {
+      ...overrides,
+      headers: {
+        'content-type': 'application/json;charset=UTF-8',
+        'birth': 'h5page',
+        'signature': '1',
+        ...overrides.headers,
+      },
+    })
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} for ${response.url}`)
+    }
+    return decryptMiguPayload(new Uint8Array(await response.arrayBuffer()), response.headers.get('signature'))
+  }
+
   private parseRateSize(rate: Record<string, unknown>): number {
     const raw = rate.size ?? rate.iosSize ?? rate.androidSize ?? rate.isize ?? rate.asize ?? 0
     const text = String(raw).replace(/MB$/i, '').trim()
@@ -339,95 +315,5 @@ export class MiguMusicSource extends BaseMusicSource {
       return undefined
     }
     return value.startsWith('http') ? value : new URL(value, 'https://d.musicapp.migu.cn').toString()
-  }
-
-  private async parseXcvtsItem(payload: unknown, context: SourceContext): Promise<TrackDetail | null> {
-    const data = payload as Record<string, unknown>
-    const downloadUrl = String(data.music_url ?? '')
-    if (!downloadUrl.startsWith('http')) {
-      return null
-    }
-
-    const downloadUrlStatus = await this.audioLinkTester.test(downloadUrl, {
-      headers: context.requestOptions?.headers as Record<string, string> | undefined,
-      cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
-      timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
-      signal: context.requestOptions?.signal as AbortSignal | undefined,
-    })
-    if (!downloadUrlStatus.ok) {
-      return null
-    }
-
-    const probe = await this.audioLinkTester.probe(downloadUrl, {
-      headers: context.requestOptions?.headers as Record<string, string> | undefined,
-      cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
-      timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
-      signal: context.requestOptions?.signal as AbortSignal | undefined,
-    })
-    if (!(probe.ext && probe.ext !== 'NULL')) {
-      return null
-    }
-
-    let lyric = 'NULL'
-    const lyricUrl = String(data.lrc_url ?? '')
-    if (lyricUrl.startsWith('http')) {
-      try {
-        lyric = cleanLyric(
-          await this.parseClient.text(lyricUrl, {
-            headers: context.requestOptions?.headers as Record<string, string> | undefined,
-            cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
-            timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
-            signal: context.requestOptions?.signal as AbortSignal | undefined,
-          }),
-        )
-      }
-      catch {
-        lyric = 'NULL'
-      }
-    }
-
-    return {
-      source: this.name,
-      identifier: this.extractMiguIdentifier(String(data.link ?? '')) || sanitizeText(String(data.title ?? '')),
-      songName: sanitizeText(String(data.title ?? '')),
-      singers: sanitizeText(String(data.singer ?? '')),
-      album: 'NULL',
-      ext: probe.ext,
-      fileSize: probe.fileSize,
-      lyric,
-      coverUrl: String(data.cover ?? '') || undefined,
-      downloadUrl,
-      protocol: 'http',
-      rawData: {
-        search: payload,
-      },
-    }
-  }
-
-  private extractMiguIdentifier(link: string): string {
-    if (!link.startsWith('http')) {
-      return ''
-    }
-    return link.split('/').pop() ?? ''
-  }
-
-  private buildTrackFromXcvtsItem(payload: unknown): TrackSummary | null {
-    const data = payload as Record<string, unknown>
-    const identifier = this.extractMiguIdentifier(String(data.link ?? '')) || sanitizeText(String(data.title ?? ''))
-    if (!identifier) {
-      return null
-    }
-
-    return {
-      source: this.name,
-      identifier,
-      songName: sanitizeText(String(data.title ?? '')),
-      singers: sanitizeText(String(data.singer ?? '')),
-      album: 'NULL',
-      coverUrl: String(data.cover ?? '') || undefined,
-      rawData: {
-        search: data,
-      },
-    }
   }
 }

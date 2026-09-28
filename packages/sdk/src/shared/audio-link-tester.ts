@@ -18,6 +18,8 @@ export interface AudioLinkTestResult {
   clen: number | null
   range: boolean | null
   fmt: string | null
+  /** Best guess of the audio extension: sniffed magic bytes, then a known url extension, then the content type. */
+  ext: string | null
   reason: string
 }
 
@@ -64,6 +66,15 @@ export class AudioLinkTester {
     'video/mp4',
   ])
 
+  private static readonly magicToExt = new Map<string, string>([
+    ['mp3', 'mp3'],
+    ['flac', 'flac'],
+    ['wav', 'wav'],
+    ['ogg', 'ogg'],
+    ['mp4/m4a', 'm4a'],
+    ['aac/adts', 'aac'],
+  ])
+
   private static readonly ctypeToExt = new Map<string, string>([
     ['audio/mpeg', 'mp3'],
     ['audio/mp3', 'mp3'],
@@ -79,6 +90,18 @@ export class AudioLinkTester {
     ['audio/x-ogg', 'ogg'],
     ['video/mp4', 'mp4'],
   ])
+
+  /**
+   * Content type for an audio extension, for correcting CDNs that mislabel what they serve.
+   */
+  static contentTypeForExt(ext: string | undefined): string | undefined {
+    for (const [ctype, candidate] of AudioLinkTester.ctypeToExt) {
+      if (candidate === ext) {
+        return ctype
+      }
+    }
+    return undefined
+  }
 
   private readonly defaultHeaders: Record<string, string>
   private readonly timeoutMs: number
@@ -98,7 +121,7 @@ export class AudioLinkTester {
     try {
       headResponse = await this.request(url, { ...options, method: 'HEAD' })
       const ctype = this.normalizeContentType(headResponse.headers.get('content-type'), naiveGuessExt)
-      const ext = AudioLinkTester.ctypeToExt.get(ctype) ?? 'NULL'
+      const ext = this.resolveExt(ctype, naiveGuessExt)
       const fileSize = this.formatMb(Number(headResponse.headers.get('content-length') ?? '0'))
       if (fileSize !== 'NULL') {
         return {
@@ -118,7 +141,7 @@ export class AudioLinkTester {
     try {
       const response = await this.request(url, options)
       const ctype = this.normalizeContentType(response.headers.get('content-type'), naiveGuessExt)
-      const ext = AudioLinkTester.ctypeToExt.get(ctype) ?? 'NULL'
+      const ext = this.resolveExt(ctype, naiveGuessExt)
       const fileSize = this.formatMb(Number(response.headers.get('content-length') ?? '0'))
       return {
         fileSize,
@@ -151,6 +174,7 @@ export class AudioLinkTester {
       clen: null,
       range: null,
       fmt: null,
+      ext: null,
       reason: '',
     }
 
@@ -166,6 +190,7 @@ export class AudioLinkTester {
       output.range = (response.headers.get('accept-ranges') ?? '').toLowerCase() === 'bytes'
       if (response.ok && (this.isAudioContentType(ctype) || naiveGuessExt === 'm4s') && (clen || output.range)) {
         output.ok = true
+        output.ext = this.resolveExt(ctype, naiveGuessExt)
         output.reason = 'HEAD success'
         return output
       }
@@ -191,16 +216,18 @@ export class AudioLinkTester {
       }
       const bytes = new Uint8Array(await response.arrayBuffer())
       const ctype = output.ctype ?? this.normalizeContentType(response.headers.get('content-type'), naiveGuessExt)
+      // A ranged response's content-length is the slice size; the full size lives in content-range.
       const clen
         = output.clen
-        ?? this.parseNullableInt(response.headers.get('content-length'))
         ?? this.parseNullableInt((response.headers.get('content-range') ?? '').split('/').at(-1) ?? null)
+        ?? (response.status === 200 ? this.parseNullableInt(response.headers.get('content-length')) : null)
       output.ctype = ctype
       output.range = output.range || response.status === 206 || response.headers.has('content-range')
       output.clen = clen
       output.fmt = this.sniffMagic(bytes)
       if (this.isAudioContentType(ctype) || output.fmt || naiveGuessExt === 'm4s') {
         output.ok = true
+        output.ext = AudioLinkTester.magicToExt.get(output.fmt ?? '') ?? this.resolveExt(ctype, naiveGuessExt)
         output.reason = 'RANGEGET success'
       }
       else {
@@ -242,6 +269,16 @@ export class AudioLinkTester {
     }
   }
 
+  /**
+   * CDNs often mislabel audio (flac served as audio/mpeg, m4a as a form content type), so a known audio extension in the url wins.
+   */
+  private resolveExt(ctype: string, naiveGuessExt: string): string {
+    if (AudioLinkTester.validAudioExts.has(naiveGuessExt) && naiveGuessExt !== 'm4s') {
+      return naiveGuessExt
+    }
+    return AudioLinkTester.ctypeToExt.get(ctype) ?? 'NULL'
+  }
+
   private isAudioContentType(contentType: string | null): boolean {
     if (!contentType) {
       return false
@@ -271,12 +308,15 @@ export class AudioLinkTester {
       [new Uint8Array([0x52, 0x49, 0x46, 0x46]), 'wav'],
       [new Uint8Array([0x4F, 0x67, 0x67, 0x53]), 'ogg'],
       [new Uint8Array([0x4D, 0x54, 0x68, 0x64]), 'midi'],
-      [new Uint8Array([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]), 'mp4/m4a'],
     ]
     for (const [signature, format] of checks) {
       if (signature.every((value, index) => bytes[index] === value)) {
         return format
       }
+    }
+    // ISO BMFF: 4-byte box size followed by 'ftyp'
+    if ([0x66, 0x74, 0x79, 0x70].every((value, index) => bytes[index + 4] === value)) {
+      return 'mp4/m4a'
     }
     const firstByte = bytes[0]
     const secondByte = bytes[1]

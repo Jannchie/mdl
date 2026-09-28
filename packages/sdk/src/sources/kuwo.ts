@@ -1,7 +1,7 @@
 import type { TrackDetail, TrackLookup, TrackSummary } from '@jannchie/mdl-core'
 import type { ParsePlaylistRequest, SearchRequest, SourceContext } from '@jannchie/mdl-core/internal'
 
-import { bytesToMb, cleanLyric, hostMatches, resolveRequestedSearchCount, resolveSearchPageSize, safeGet, sanitizeText, secondsToHms, uniqueByIdentifier } from '../shared/utils.js'
+import { hostMatches, resolveRequestedSearchCount, resolveSearchPageSize, safeGet, sanitizeText, secondsToHms, uniqueByIdentifier } from '../shared/utils.js'
 import { BaseMusicSource } from './base.js'
 
 const KUWO_HOSTS = ['kuwo.cn']
@@ -16,6 +16,10 @@ export class KuwoMusicSource extends BaseMusicSource {
   protected readonly downloadHeaders = this.searchHeaders
 
   private static readonly qualityLevels = ['lossless', 'exhigh', 'standard']
+  private static readonly parseProviders = [
+    'https://musicapi.haitangw.net/music/kw.php',
+    'http://music.nxinxz.com/kw.php',
+  ]
 
   protected buildSearchRequests(input: SearchRequest) {
     const pageSize = resolveSearchPageSize(input)
@@ -73,10 +77,6 @@ export class KuwoMusicSource extends BaseMusicSource {
       return track
     }
 
-    const signal = context.requestOptions?.signal as AbortSignal | undefined
-    if (signal?.aborted) {
-      throw new Error('aborted')
-    }
     const searchResult: Record<string, unknown> = (track.rawData?.search as Record<string, unknown> | undefined) ?? {
       MUSICRID: track.identifier,
       SONGNAME: track.songName,
@@ -86,67 +86,32 @@ export class KuwoMusicSource extends BaseMusicSource {
     }
     const songId = String(searchResult.MUSICRID ?? searchResult.musicrid ?? track.identifier).replace(/^MUSIC_/, '')
 
-    for (const level of KuwoMusicSource.qualityLevels) {
-      if (signal?.aborted) {
-        throw new Error('aborted')
-      }
-      const payload = await this.parseClient.json<unknown>('https://kw-api.cenguigui.cn/', {
-        query: {
-          id: songId,
-          type: 'song',
-          level,
-          format: 'json',
-        },
-        headers: context.requestOptions?.headers as Record<string, string> | undefined,
-        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
-        signal: context.requestOptions?.signal as AbortSignal | undefined,
+    const durationS = Number(searchResult.DURATION ?? searchResult.duration ?? track.durationS ?? 0)
+    const resolved = await this.resolveFirstPlayable(KuwoMusicSource.parseProviders, KuwoMusicSource.qualityLevels, async (endpoint, level) => {
+      const payload = await this.parseClient.json<unknown>(endpoint, {
+        ...this.resolverOverrides(context),
+        query: { id: songId, level, type: 'json' },
       })
-      const downloadUrl = String(safeGet(payload, ['data', 'url'], ''))
-      if (!downloadUrl.startsWith('http')) {
-        continue
-      }
-
-      const downloadUrlStatus = await this.audioLinkTester.test(downloadUrl, {
-        headers: context.requestOptions?.headers as Record<string, string> | undefined,
-        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
-        signal: context.requestOptions?.signal as AbortSignal | undefined,
-      })
-      if (!downloadUrlStatus.ok) {
-        continue
-      }
-
-      const probe = await this.audioLinkTester.probe(downloadUrl, {
-        headers: context.requestOptions?.headers as Record<string, string> | undefined,
-        cookies: context.requestOptions?.cookies as Record<string, unknown> | string | undefined,
-        timeoutMs: context.requestOptions?.timeoutMs as number | undefined,
-        signal: context.requestOptions?.signal as AbortSignal | undefined,
-      })
-      if (!(probe.ext && probe.ext !== 'NULL')) {
-        continue
-      }
-
-      const payloadSize = this.parseSizeMb(String(safeGet(payload, ['data', 'size'], '')))
-      const durationS = Number(safeGet(payload, ['data', 'duration'], searchResult.DURATION ?? searchResult.duration ?? 0))
+      return { urls: [String(safeGet(payload, ['data', 'url'], ''))], payload }
+    }, context, durationS)
+    if (resolved) {
       return {
         source: this.name,
         identifier: songId,
-        songName: sanitizeText(String(safeGet(payload, ['data', 'name'], searchResult.SONGNAME ?? searchResult.name ?? ''))),
-        singers: sanitizeText(String(safeGet(payload, ['data', 'artist'], searchResult.ARTIST ?? searchResult.artist ?? ''))),
-        album: sanitizeText(String(safeGet(payload, ['data', 'album'], searchResult.ALBUM ?? searchResult.album ?? ''))),
-        ext: probe.ext,
-        fileSizeBytes: payloadSize > 0 ? payloadSize : undefined,
-        fileSize: probe.fileSize === 'NULL' ? bytesToMb(payloadSize) : probe.fileSize,
-        durationS,
+        songName: sanitizeText(String(searchResult.SONGNAME ?? searchResult.name ?? '')),
+        singers: sanitizeText(String(searchResult.ARTIST ?? searchResult.artist ?? '')),
+        album: sanitizeText(String(searchResult.ALBUM ?? searchResult.album ?? '')),
+        ext: resolved.link.ext,
+        fileSize: resolved.link.fileSize,
+        durationS: durationS || undefined,
         duration: secondsToHms(durationS),
-        lyric: cleanLyric(String(safeGet(payload, ['data', 'lyric'], 'NULL'))),
-        coverUrl: String(safeGet(payload, ['data', 'pic'], searchResult.hts_MVPIC ?? searchResult.albumpic ?? '')) || undefined,
-        downloadUrl,
+        lyric: 'NULL',
+        coverUrl: String(searchResult.hts_MVPIC ?? searchResult.albumpic ?? '') || undefined,
+        downloadUrl: resolved.url,
         protocol: 'http',
         rawData: {
           search: searchResult,
-          download: payload,
+          download: resolved.candidates.payload,
         },
       }
     }
@@ -203,10 +168,5 @@ export class KuwoMusicSource extends BaseMusicSource {
     const deduped = [...new Map(tracks.map(track => [String((track as Record<string, unknown>).musicrid ?? ''), track])).values()]
     const parsed = await Promise.all(deduped.map(track => this.buildSearchTrack(track, context)))
     return uniqueByIdentifier(parsed.filter((track): track is TrackSummary => track !== null))
-  }
-
-  private parseSizeMb(value: string): number {
-    const matched = value.match(/([\d.]+)\s*MB/i)
-    return matched ? Number(matched[1]) * 1024 * 1024 : 0
   }
 }
